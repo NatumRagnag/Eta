@@ -17,6 +17,7 @@ internal object AgentToolCatalog {
         entryTools: Set<String> = emptySet(),
         xiaomiToolsBridgeCatalog: XiaomiToolsBridgeProtocol.Catalog =
             XiaomiToolsBridgeProtocol.Catalog.EMPTY,
+        hostCapabilities: Set<String> = emptySet(),
     ): JSONArray =
         JSONArray().also { tools ->
             AgentContextAppToolCatalog.appendTo(tools)
@@ -41,6 +42,12 @@ internal object AgentToolCatalog {
                 sensitiveReadTools = deviceSensitiveReadTools,
                 sensitiveActionTools = deviceSensitiveActionTools,
             ).forEach { definition -> tools.put(definition.asModelTool()) }
+            XiaomiHostToolCatalog.appendTo(
+                tools = tools,
+                capabilities = hostCapabilities,
+                directTools = deviceDirectTools,
+                sensitiveActionTools = deviceSensitiveActionTools,
+            )
             if (terminalTools) {
                 AgentFileVisionToolCatalog.appendTo(tools)
                 AgentTerminalToolCatalog.appendTo(tools)

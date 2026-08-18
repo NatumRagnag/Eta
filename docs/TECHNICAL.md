@@ -39,14 +39,15 @@ Manifest 注册 `VoiceInteractionService`、独立进程的 `VoiceInteractionSes
 
 `VoiceInteractionSession` 只承接系统入口并关闭自身 UI；`EtaAssistantOverlayService` 持有全屏窗口、彩色边缘动画和键盘输入。窗口通过 `setFitInsetsTypes(0)` 绘制到状态栏、导航栏与显示开孔后方，可交互内容再通过 `WindowInsetsRulers.SafeDrawing` 与 `Ime` 保持可触达，避免给根容器增加 Insets 后截断 edge-to-edge 背景。用户提交的文本交给 `AgentRuntimeClient`；请求、流式结果、前台工具收起、取消与归档沿用既有 Runtime 协议，当前不执行语音识别或语音朗读。
 
-`:voice`、`:voice_session` 与 `:recognition` 进程只初始化本地偏好，不预热数据库、Skills 或 Xposed UI 服务。`RecognitionService` 仅保留 Android 数字助理角色资格所需声明，不由当前浮窗调用；HyperOS 按键适配不在当前实现范围内。
+`:voice`、`:voice_session` 与 `:recognition` 进程只初始化本地偏好，不预热数据库、Skills 或 Xposed UI 服务。`RecognitionService` 仅保留 Android 数字助理角色资格所需声明，不由当前浮窗调用。
 
 ## system_server
 
-- **电源键接管**：Hook `PhoneWindowManagerExtImpl$OplusSpeechHandler.handleMessage()` 处理系统分发给小布的唤醒消息（`what == 0x3F3`）。目标为小布时直接执行原方法；目标为 Gemini 或 Eta 时才拦截并分发到对应入口。
+- **ColorOS 电源键接管**：Hook `PhoneWindowManagerExtImpl$OplusSpeechHandler.handleMessage()` 处理系统分发给小布的唤醒消息（`what == 0x3F3`）。目标为厂商助手时直接执行原方法；目标为 Gemini 或 Eta 时才拦截并分发到对应入口。
+- **HyperOS 电源键接管**：Hook `com.miui.server.input.util.ShortCutActionsUtils.triggerFunction(String,String,Bundle,boolean,String)` 匹配 `launch_voice_assistant` 与 `long_press_power_key`，并 Hook 最终写死小爱的 `launchVoiceAssistant(String,Bundle)` 出口，覆盖 ROM 的直接或优化调用路径。选择 Eta/Gemini 后，优先显示活动的标准数字助理会话，再走目标包的 `ACTION_ASSIST` Activity 兜底；两条路径都失败时返回未触发，不执行超级小爱 `VoiceService`。默认助理校正由 `system_server` 的开机 Hook 完成，不依赖 `service.d`。
 - **兼容配置**：三态目标写入字符串键；键不存在或值非法时读取旧 `POWER_KEY_TAKEOVER` 布尔协议，`true` 继续表示 Gemini，`false` 表示小布。新安装默认保持小布，旧用户不会因新增 Eta 被改写目标。
 - **数字助理配置修复**：独立自动设置开关开启后，开机、解锁、切用户及启动失败恢复时，通过 `AssistantManager` 异步校正当前 Gemini/Eta 目标的 `android.app.role.ASSISTANT` 与 secure settings。小布模式和开关关闭时不写系统配置；校验缓存及异步回调同时核对用户与目标，旧目标任务不会继续覆盖新选择。
-- **唤起逻辑优化**：Gemini 恢复原有 `VoiceInteractionManagerService`、`ACTION_ASSIST`、`ACTION_VOICE_COMMAND` 顺序；Eta 优先使用活动 `voiceinteraction` 会话，再在已经配置为默认助理时尝试同包 `ACTION_ASSIST` 桥。所有路径失败后立即执行小布原逻辑，不阻塞系统回调。
+- **唤起逻辑优化**：Gemini 恢复原有 `VoiceInteractionManagerService`、`ACTION_ASSIST`、`ACTION_VOICE_COMMAND` 顺序；Eta 优先使用活动 `voiceinteraction` 会话，再尝试同包 `ACTION_ASSIST` 桥。ColorOS 所有路径失败后立即执行小布原逻辑；HyperOS 非厂商目标失败时阻止回退超级小爱。两条路径都不阻塞系统回调。
 - **息屏后维持 Hey Google 可用**：Hook `PhoneWindowManager.screenTurnedOff()`，在默认显示息屏后短延迟检查 Google 的 `SoftwareTrustedHotwordDetectorSession`。只有已有 `mSoftwareCallback` 且当前未 running 时，才恢复 `startListeningFromMicLocked()`；亮屏或恢复成功后会取消未执行任务。
 - **一圈即搜支持**：强制启用 `ContextualSearchManagerService`，将包名指向 Google App，并放行 `SystemUI` 与 ColorDirectService 的调用权限。作为一圈即搜的底层依赖始终执行，不可关闭。
 - **无障碍保护**：复用已验证的 `SystemServer.startOtherServices(TimingsTraceAndSlog)` 生命周期点，在系统服务启动完成后接入事件驱动保护。后台工作复用 Android `BackgroundThread`，不开模块线程、不轮询；开关默认关闭，开启请求需同时通过 signature 权限、真实发送 UID、服务声明与 APK signer 钉扎校验。保护只维护 owner 用户中的 Eta 组件和总开关，保留其他服务；断连时通过仅允许 `system` UID 调用的健康 Provider 确认，并对 Eta 做带次数上限和冷却的定向重绑。
@@ -199,7 +200,7 @@ Eta 不对浏览器请求执行额外的 URL、DNS、IP、主机数量、请求�
 
 - 不轮询、不保活 Google 进程、不持续写日志
 - 无障碍保护默认关闭；开启后只响应设置、包、用户生命周期与 Runtime 明确上报，设置争抢采用退避，断连重绑有次数和冷却上限
-- 热路径只保留当前机型实际验证有效的 `OplusSpeechHandler` hook
+- 热路径只保留已验证有效的 `OplusSpeechHandler` 与 HyperOS `ShortCutActionsUtils` 精确参数 hook
 - 默认助理配置检查带 15 秒冷却，息屏后的 Hey Google 恢复路径不主动查写默认助理配置
 - 高频成功路径使用 `DEBUG`；Debug 构建可诊断，Release 由 R8 确定性裁剪
 - 电源键拦截路径不执行休眠、轮询或阻塞等待；本次触发只做快速启动尝试，失败即回退系统原逻辑
@@ -209,8 +210,8 @@ Eta 不对浏览器请求执行额外的 URL、DNS、IP、主机数量、请求�
 
 ## 预期行为
 
-电源键目标为小布时，ColorOS 长按电源键保持厂商原始行为且不修改当前默认助理。目标为 Gemini 时，长按恢复 Google 原有系统助手与 Activity 兜底链路。目标为 Eta 且 Eta 已是默认数字助理时，长按会打开 edge-to-edge 全屏助理浮窗并自动聚焦键盘输入框；入口会在浮窗与 IME 出现前准备一张屏幕截图，只有用户选择后才作为下一条消息的图片上下文发送。用户提交文本后，工具执行、流式结果和归档仍由主进程中的 Agent Runtime 负责，当前流程不执行 ASR 或 TTS。
+电源键目标为厂商助手时，ColorOS 与 HyperOS 都保持厂商原始行为且不修改当前默认助理。目标为 Gemini 时，长按恢复 Google 原有系统助手与 Activity 兜底链路。目标为 Eta 时，长按会打开 edge-to-edge 全屏助理浮窗并自动聚焦键盘输入框；入口会在浮窗与 IME 出现前准备一张屏幕截图，只有用户选择后才作为下一条消息的图片上下文发送。用户提交文本后，工具执行、流式结果和归档仍由主进程中的 Agent Runtime 负责，当前流程不执行 ASR 或 TTS。
 
-Eta 尚未成为默认助理且自动设置关闭时，按既定策略直接回到小布，不创建平行 Activity 会话。自动设置开启时，失败触发只在后台修复当前选择，当前长按仍立即回退；后续触发使用修复后的主路径。HyperOS 后续只需把厂商按键事件接到同一目标分发边界，不需要修改文本会话和 Runtime。
+ColorOS 上 Eta 尚未成为默认助理且自动设置关闭时，按既定策略直接回到小布，不创建平行 Activity 会话。自动设置开启时，失败触发只在后台修复当前选择，当前长按仍立即回退；后续触发使用修复后的主路径。HyperOS 上标准会话不可用时会直接启动 Eta 的 `ACTION_ASSIST` 桥，因此不需要回退小爱。
 
 配置界面按消费边界保存开关：Agent 与本地工具写入 App 私有配置，Hook 能力写入 LSPosed 侧 RemotePreferences。Hook 回调和延迟任务执行前都会读取对应开关，所以后续触发按当前配置执行。

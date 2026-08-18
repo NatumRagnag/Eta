@@ -49,5 +49,6 @@ internal object AgentSensitiveToolPolicy {
         "take_photo_recognize",
         "trans_image",
         "get_screen_context",
+        "xiaomi_external_agent",
     )
 }

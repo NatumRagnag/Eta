@@ -93,6 +93,7 @@ internal object AgentModelClient {
         entryTools: Set<String> = emptySet(),
         xiaomiToolsBridgeCatalog: XiaomiToolsBridgeProtocol.Catalog =
             XiaomiToolsBridgeProtocol.Catalog.EMPTY,
+        hostCapabilities: Set<String> = emptySet(),
         onEvent: (AgentEvent) -> Unit = {}
     ): ModelResponse.Text {
         config.validate()
@@ -116,6 +117,7 @@ internal object AgentModelClient {
             memoryTools = memoryContext.enabled,
             entryTools = entryTools,
             xiaomiToolsBridgeCatalog = xiaomiToolsBridgeCatalog,
+            hostCapabilities = hostCapabilities,
         )
         onEvent(
             AgentEvent.RunStarted(

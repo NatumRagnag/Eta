@@ -16,6 +16,7 @@ class AgentSensitiveTranscriptTest {
         assertTrue(AgentSensitiveToolPolicy.isSensitive("recent_app_activity"))
         assertTrue(AgentSensitiveToolPolicy.isSensitive("get_health_summary"))
         assertTrue(AgentSensitiveToolPolicy.isSensitive("search_personal_orders"))
+        assertTrue(AgentSensitiveToolPolicy.isSensitive("xiaomi_external_agent"))
     }
 
     @Test

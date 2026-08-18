@@ -1,7 +1,6 @@
 package fuck.andes.hook.xiaoai
 
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
 import fuck.andes.agent.model.AgentModelClient
@@ -30,8 +29,6 @@ import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONObject
 
 internal object XiaoAiHooks {
-    const val SUPPORTED_VERSION_CODE = 507013032L
-
     private const val OPERATION_MANAGER_CLASS =
         "com.xiaomi.voiceassistant.instruction.base.OperationManager"
     private const val APPLICATION_CLASS = "com.xiaomi.voiceassistant.VAApplication"
@@ -111,7 +108,7 @@ internal object XiaoAiHooks {
             hooks.missing(
                 id = "xiaoai.bootstrap",
                 description = "VAApplication.onCreate",
-                detail = "未找到超级小爱 Application 版本门禁入口",
+                detail = "未找到超级小爱 Application 启动入口",
             )
             return
         }
@@ -121,18 +118,11 @@ internal object XiaoAiHooks {
             description = "XiaoAi VAApplication.onCreate",
         ) { chain ->
             val context = chain.thisObject as? Context
-            val versionCode = context?.let(::packageVersionCode) ?: -1L
-            if (XiaoAiTakeoverPolicy.isSupportedVersion(versionCode)) {
-                installBusinessHooksOnce(
-                    module = module,
-                    rootLogger = rootLogger,
-                    classLoader = classLoader,
-                )
-            } else {
-                hooks.logger.warnThrottled("xiaoai_unsupported_version") {
-                    "超级小爱版本不在静态适配范围，保持原生行为: versionCode=$versionCode"
-                }
-            }
+            installBusinessHooksOnce(
+                module = module,
+                rootLogger = rootLogger,
+                classLoader = classLoader,
+            )
             val result = chain.proceed()
             if (enableToolsBridge && context != null) {
                 XiaoAiToolsBridgeHost.prepare(
@@ -164,14 +154,6 @@ internal object XiaoAiHooks {
         deferredHookHandles += installation.handles
         rootLogger.scoped("XiaoAi").info(installation.report.summary())
     }
-
-    private fun packageVersionCode(context: Context): Long =
-        runCatching {
-            context.packageManager.getPackageInfo(
-                context.packageName,
-                PackageManager.PackageInfoFlags.of(0L),
-            ).longVersionCode
-        }.getOrDefault(-1L)
 
     private fun hookQueryCapture(
         hooks: HookRegistrar,
@@ -569,6 +551,7 @@ internal object XiaoAiHooks {
             logger = logger,
             entryToolExecutor = uiAgentBridge,
             xiaomiToolsBridgeEndpoint = XiaoAiToolsBridgeHost,
+            hostBridge = XiaomiHostBridge(context, classLoader, logger),
         )
         run.client.set(client)
         var resultRunId: String? = null

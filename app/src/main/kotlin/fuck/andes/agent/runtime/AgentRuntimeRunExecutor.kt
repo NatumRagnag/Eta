@@ -44,6 +44,7 @@ internal class AgentRuntimeRunExecutor(
     private val xiaomiToolsBridgeInvoker: ((
         XiaomiToolsBridgeProtocol.CallRequest,
     ) -> XiaomiToolsBridgeProtocol.CallResult)? = null,
+    private val hostToolExecutor: AgentHostToolExecutor? = null,
 ) {
     data class Outcome(
         val result: AgentRuntimeWire.RunResult,
@@ -203,6 +204,7 @@ internal class AgentRuntimeRunExecutor(
                 runAvailableSkillIds = skillContext.installedSkills.mapTo(mutableSetOf()) { it.id },
                 pendingSkillConflict = pendingSkillConflict,
                 xiaomiToolsBridgeExecutor = xiaomiToolsBridgeExecutor,
+                hostToolExecutor = hostToolExecutor,
             )
             localToolExecutor = executor
             val remoteExecutor = entryToolTarget
@@ -262,6 +264,7 @@ internal class AgentRuntimeRunExecutor(
                 memoryContext = memoryContext,
                 entryTools = enabledEntryTools,
                 xiaomiToolsBridgeCatalog = xiaomiToolsBridgeCatalog,
+                hostCapabilities = request.hostCapabilities,
             ) { event ->
                 timing.accept(event)
                 acceptEvent(session, event, archivedEvents, entrySurfaceGuard)

@@ -1,5 +1,6 @@
 package fuck.andes.agent.model
 
+import fuck.andes.agent.runtime.AgentHostCapabilities
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -198,6 +199,57 @@ class AgentToolCatalogTest {
             listOf("replace_range", "append", "clear"),
             properties.getJSONObject("mode").getJSONArray("enum").stringValues(),
         )
+    }
+
+    @Test
+    fun xiaomiHostToolsRequireBothCapabilityAndMatchingPermission() {
+        val capabilities = setOf(
+            AgentHostCapabilities.AIASST_VISION_APP_FUNCTIONS,
+            AgentHostCapabilities.EXTERNAL_AGENT,
+        )
+        val disabled = AgentToolCatalog.build(
+            terminalTools = false,
+            browserTools = false,
+            deviceDirectTools = false,
+            deviceSensitiveActionTools = false,
+            hostCapabilities = capabilities,
+        ).toolNames().toSet()
+        assertTrue(XiaomiHostToolCatalog.visionToolNames.none(disabled::contains))
+        assertFalse(XiaomiHostToolCatalog.EXTERNAL_AGENT in disabled)
+
+        val directOnly = AgentToolCatalog.build(
+            terminalTools = false,
+            browserTools = false,
+            deviceDirectTools = true,
+            deviceSensitiveActionTools = false,
+            hostCapabilities = capabilities,
+        ).toolNames().toSet()
+        assertTrue(directOnly.containsAll(XiaomiHostToolCatalog.visionToolNames))
+        assertFalse(XiaomiHostToolCatalog.EXTERNAL_AGENT in directOnly)
+
+        val enabled = AgentToolCatalog.build(
+            terminalTools = false,
+            browserTools = false,
+            deviceDirectTools = true,
+            deviceSensitiveActionTools = true,
+            hostCapabilities = capabilities,
+        )
+        val names = enabled.toolNames().toSet()
+        assertEquals(4, XiaomiHostToolCatalog.visionToolNames.size)
+        assertTrue(names.containsAll(XiaomiHostToolCatalog.visionToolNames))
+        assertTrue(XiaomiHostToolCatalog.EXTERNAL_AGENT in names)
+
+        val externalParameters = enabled.function(XiaomiHostToolCatalog.EXTERNAL_AGENT)
+            .getJSONObject("parameters")
+        assertEquals(
+            listOf("probe", "open_session", "submit", "close_session"),
+            externalParameters.getJSONObject("properties")
+                .getJSONObject("action")
+                .getJSONArray("enum")
+                .stringValues(),
+        )
+        assertEquals(8, externalParameters.getJSONObject("properties")
+            .getJSONObject("attachments").getInt("maxItems"))
     }
 
     private fun JSONArray.toolNames(): List<String> =

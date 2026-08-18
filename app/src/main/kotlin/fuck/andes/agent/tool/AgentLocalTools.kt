@@ -15,6 +15,7 @@ import fuck.andes.agent.model.AgentSensitiveToolPolicy
 import fuck.andes.agent.overlay.AgentHapticFeedback
 import fuck.andes.agent.overlay.GestureIndicator
 import fuck.andes.agent.runtime.AgentAppContext
+import fuck.andes.agent.runtime.AgentHostToolExecutor
 import fuck.andes.agent.skill.SkillCompatibilityChecker
 import fuck.andes.agent.skill.SkillIndexService
 import fuck.andes.agent.skill.SkillInstallErrorCode
@@ -84,6 +85,7 @@ internal class AgentLocalTools(
     runAvailableSkillIds: Set<String> = emptySet(),
     pendingSkillConflict: PendingSkillConflictCapability? = null,
     private val xiaomiToolsBridgeExecutor: XiaomiToolsBridgeRemoteExecutor? = null,
+    private val hostToolExecutor: AgentHostToolExecutor? = null,
 ) : AgentModelClient.ToolExecutor, AutoCloseable {
 
     private val closed = AtomicBoolean(false)
@@ -117,6 +119,7 @@ internal class AgentLocalTools(
         rootCommandExecutor.close()
         githubSkillSource?.close()
         xiaomiToolsBridgeExecutor?.close()
+        hostToolExecutor?.close()
         inspectedGitHubSnapshots.clear()
     }
 
@@ -201,6 +204,7 @@ internal class AgentLocalTools(
                 "skills_list_curated" -> textResult(skillsListCurated())
                 "skills_inspect_github" -> textResult(skillsInspectGitHub(args))
                 "skills_install_from_github" -> textResult(skillsInstallFromGitHub(args))
+                in hostToolExecutor?.toolNames.orEmpty() -> hostToolExecutor!!.execute(toolCall)
                 else -> textResult(
                     errorResult(
                         code = "UNKNOWN_TOOL",

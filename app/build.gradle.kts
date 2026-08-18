@@ -25,6 +25,7 @@ java {
 android {
     namespace = "fuck.andes"
     compileSdk = 37
+    buildToolsVersion = "36.1.0"
 
     defaultConfig {
         applicationId = "fuck.andes"

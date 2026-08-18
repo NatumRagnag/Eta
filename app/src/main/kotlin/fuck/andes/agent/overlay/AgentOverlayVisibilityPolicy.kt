@@ -76,6 +76,10 @@ internal object AgentOverlayVisibilityPolicy {
         "take_photo_recognize",
         "play_media_tool",
         "get_screen_context",
+        "xiaomi_open_ai_subtitles",
+        "xiaomi_open_conversation_translation",
+        "xiaomi_open_simultaneous_interpretation",
+        "xiaomi_open_text_translation",
     )
 
     private val foregroundOperationTools = setOf(
@@ -83,6 +87,10 @@ internal object AgentOverlayVisibilityPolicy {
         *foregroundDrivingTools.toTypedArray(),
     )
 
-    private val entrySurfaceDismissalTools =
-        foregroundOperationTools + setOf("set_alarm", "set_timer", "xiaomi_dial_phone")
+    private val entrySurfaceDismissalTools = foregroundOperationTools + setOf(
+        "set_alarm",
+        "set_timer",
+        "xiaomi_dial_phone",
+        "xiaomi_external_agent",
+    )
 }

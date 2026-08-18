@@ -212,4 +212,25 @@ class AgentOverlayVisibilityPolicyTest {
             assertTrue(name, AgentOverlayVisibilityPolicy.shouldRevealFor(event))
         }
     }
+
+    @Test
+    fun `xiaomi translation app functions reveal operations and dismiss entry surface`() {
+        listOf(
+            "xiaomi_open_ai_subtitles",
+            "xiaomi_open_conversation_translation",
+            "xiaomi_open_simultaneous_interpretation",
+            "xiaomi_open_text_translation",
+        ).forEach { name ->
+            val event = AgentEvent.ToolStarted(1, "call", name, "{}")
+            assertTrue(AgentOverlayVisibilityPolicy.shouldRevealFor(event))
+            assertTrue(AgentOverlayVisibilityPolicy.shouldDismissEntrySurfaceFor(event))
+        }
+    }
+
+    @Test
+    fun `external agent dismisses entry surface without forcing operation overlay`() {
+        val event = AgentEvent.ToolStarted(1, "call", "xiaomi_external_agent", "参数已接收")
+        assertTrue(AgentOverlayVisibilityPolicy.shouldDismissEntrySurfaceFor(event))
+        assertFalse(AgentOverlayVisibilityPolicy.shouldRevealFor(event))
+    }
 }

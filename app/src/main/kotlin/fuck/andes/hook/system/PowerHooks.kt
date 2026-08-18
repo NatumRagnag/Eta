@@ -9,6 +9,7 @@ import fuck.andes.core.safeLogType
 
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import android.os.Handler
 import android.os.Message
 import android.os.SystemClock
@@ -36,10 +37,267 @@ internal object PowerHooks {
     ): HookInstallation {
         val hooks = HookRegistrar(module, rootLogger, "Power")
         return hooks.install {
-            // 当前机型实测证明 OplusSpeechHandler 是必要路径，目标在热路径即时读取。
+            // 厂商快捷键路径都在热路径即时读取目标，切换后无需重启目标应用。
             hookOplusSpeechHandler(hooks, classLoader)
+            hookHyperOsShortcutActions(hooks, classLoader)
         }
     }
+
+    private fun hookHyperOsShortcutActions(
+        hooks: HookRegistrar,
+        classLoader: ClassLoader,
+    ) {
+        val logger = hooks.logger
+        val shortcutClass = HookSupport.findClassOrNull(
+            classLoader,
+            ModuleConfig.MIUI_SHORTCUT_ACTIONS_UTILS_CLASS,
+        )
+        val triggerMethod = shortcutClass?.let {
+            HookSupport.findMethod(
+                it,
+                "triggerFunction",
+                String::class.java,
+                String::class.java,
+                Bundle::class.java,
+                Boolean::class.javaPrimitiveType!!,
+                String::class.java,
+            )
+        }
+        if (triggerMethod == null) {
+            hooks.missing(
+                id = "system.power-hyperos-shortcut",
+                description = "ShortCutActionsUtils.triggerFunction",
+                detail = "未找到 HyperOS ShortCutActionsUtils.triggerFunction(String,String,Bundle,boolean,String)",
+            )
+            return
+        }
+
+        hooks.intercept(
+            id = "system.power-hyperos-shortcut",
+            executable = triggerMethod,
+            description = "HyperOS ShortCutActionsUtils.triggerFunction",
+        ) { chain ->
+            val shortcutActions = chain.getThisObject()
+            val context = HookSupport.getFieldValue(shortcutActions, "mContext") as? Context
+            val configuredTarget = Prefs.powerAssistantTarget()
+            val target = if (context != null) {
+                resolveHyperOsAssistantTarget(context, configuredTarget)
+            } else {
+                configuredTarget
+            }
+            val function = chain.getArg(0) as? String
+            val shortcut = chain.getArg(1) as? String
+            if (!shouldInterceptHyperOsVoiceAssistant(function, shortcut, target)) {
+                return@intercept chain.proceed()
+            }
+
+            val binding = assistantBindingFor(target) ?: return@intercept chain.proceed()
+            if (context == null) {
+                logger.warnThrottled("hyperos_shortcut_missing_context") {
+                    "HyperOS 电源键路由缺少 mContext，回退原逻辑"
+                }
+                return@intercept chain.proceed()
+            }
+            if (!HookSupport.isPackageInstalled(context, binding.packageName)) {
+                logger.warnThrottled("hyperos_shortcut_${target.persistedValue}_missing") {
+                    "HyperOS 电源键目标 ${binding.displayName} 未安装，阻止回退超级小爱"
+                }
+                return@intercept false
+            }
+
+            val now = SystemClock.uptimeMillis()
+            if (now - lastInterceptUptime <= ModuleConfig.INTERCEPT_DEDUP_WINDOW_MS) {
+                logger.debug { "HyperOSShortcut: 命中去重窗口，吞掉重复触发" }
+                return@intercept true
+            }
+
+            val launched = AssistantManager.showAssistantSession(
+                context = context,
+                target = target,
+                logger = logger,
+                source = "HyperOSShortcut",
+                logFailures = false,
+            ) || tryStartHyperOsAssistantActivity(
+                context = context,
+                target = target,
+                binding = binding,
+                logger = logger,
+            )
+
+            if (!launched) {
+                logger.warnThrottled("hyperos_shortcut_${target.persistedValue}_launch_failed") {
+                    "HyperOS 电源键无法启动 ${binding.displayName}，阻止回退超级小爱"
+                }
+                return@intercept false
+            }
+
+            markLaunchSuccess(now)
+            performHyperOsShortcutHaptic(
+                shortcutActions = shortcutActions,
+                function = function.orEmpty(),
+                shortcut = shortcut.orEmpty(),
+                requested = chain.getArg(3) as? Boolean ?: false,
+                effectKey = chain.getArg(4) as? String,
+                logger = logger,
+            )
+            logger.debug { "HyperOSShortcut: 已把长按电源键路由到 ${binding.displayName}" }
+            true
+        }
+
+        // 这台 HyperOS 的电源键路径会穿过 triggerFunction 的优化调用，导致上面的
+        // 精确入口没有收到回调；launchVoiceAssistant 是真正写死并启动小爱的最终出口。
+        // 仅当用户已选择 Eta/Gemini 时接管，OEM 模式仍完整保留原行为。
+        val launchVoiceAssistantMethod = HookSupport.findMethod(
+            shortcutClass,
+            "launchVoiceAssistant",
+            String::class.java,
+            Bundle::class.java,
+        )
+        if (launchVoiceAssistantMethod == null) {
+            hooks.missing(
+                id = "system.power-hyperos-voice-launch",
+                description = "ShortCutActionsUtils.launchVoiceAssistant",
+                detail = "未找到 HyperOS ShortCutActionsUtils.launchVoiceAssistant(String,Bundle)",
+            )
+            return
+        }
+        hooks.intercept(
+            id = "system.power-hyperos-voice-launch",
+            executable = launchVoiceAssistantMethod,
+            description = "HyperOS ShortCutActionsUtils.launchVoiceAssistant",
+        ) { chain ->
+            val shortcutActions = chain.getThisObject()
+            val context = HookSupport.getFieldValue(shortcutActions, "mContext") as? Context
+                ?: return@intercept chain.proceed()
+            val target = resolveHyperOsAssistantTarget(context, Prefs.powerAssistantTarget())
+            if (!shouldInterceptHyperOsVoiceAssistantLaunch(target)) {
+                return@intercept chain.proceed()
+            }
+            val binding = assistantBindingFor(target) ?: return@intercept chain.proceed()
+            if (!HookSupport.isPackageInstalled(context, binding.packageName)) {
+                logger.warnThrottled("hyperos_voice_launch_${target.persistedValue}_missing") {
+                    "HyperOS 助理目标 ${binding.displayName} 未安装，阻止回退超级小爱"
+                }
+                return@intercept false
+            }
+
+            val now = SystemClock.uptimeMillis()
+            if (now - lastInterceptUptime <= ModuleConfig.INTERCEPT_DEDUP_WINDOW_MS) {
+                logger.debug { "HyperOSVoiceLaunch: 命中去重窗口，吞掉重复触发" }
+                return@intercept true
+            }
+            val launched = AssistantManager.showAssistantSession(
+                context = context,
+                target = target,
+                logger = logger,
+                source = "HyperOSVoiceLaunch",
+                logFailures = false,
+            ) || tryStartHyperOsAssistantActivity(
+                context = context,
+                target = target,
+                binding = binding,
+                logger = logger,
+            )
+            if (!launched) {
+                logger.warnThrottled("hyperos_voice_launch_${target.persistedValue}_failed") {
+                    "HyperOS 助理出口无法启动 ${binding.displayName}，阻止回退超级小爱"
+                }
+                return@intercept false
+            }
+
+            markLaunchSuccess(now)
+            val shortcut = chain.getArg(0) as? String
+            logger.debug {
+                "HyperOSVoiceLaunch: 已把小爱启动出口路由到 ${binding.displayName}, shortcut=$shortcut"
+            }
+            true
+        }
+    }
+
+    private fun resolveHyperOsAssistantTarget(
+        context: Context,
+        configuredTarget: PowerAssistantTarget,
+    ): PowerAssistantTarget {
+        if (configuredTarget != PowerAssistantTarget.OEM) return configuredTarget
+        return when {
+            AssistantManager.isAssistantConfigured(context, PowerAssistantTarget.ETA) ->
+                PowerAssistantTarget.ETA
+            AssistantManager.isAssistantConfigured(context, PowerAssistantTarget.GEMINI) ->
+                PowerAssistantTarget.GEMINI
+            else -> PowerAssistantTarget.OEM
+        }
+    }
+
+    private fun tryStartHyperOsAssistantActivity(
+        context: Context,
+        target: PowerAssistantTarget,
+        binding: AssistantBinding,
+        logger: ModuleLogger,
+    ): Boolean {
+        val actions = when (target) {
+            PowerAssistantTarget.OEM -> return false
+            PowerAssistantTarget.ETA -> listOf(Intent.ACTION_ASSIST)
+            PowerAssistantTarget.GEMINI -> listOf(Intent.ACTION_ASSIST, Intent.ACTION_VOICE_COMMAND)
+        }
+        return actions.any { action ->
+            val intent = Intent(action).apply {
+                setPackage(binding.packageName)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (!runCatching { HookSupport.resolvesActivity(context, intent) }.getOrDefault(false)) {
+                return@any false
+            }
+            runCatching {
+                context.startActivity(intent)
+                true
+            }.getOrElse { throwable ->
+                logger.warnThrottled("hyperos_shortcut_${target.persistedValue}_${action}_failed") {
+                    "HyperOSShortcut: $action 启动 ${binding.displayName} 失败，" +
+                        "type=${throwable.safeLogType()}"
+                }
+                false
+            }
+        }
+    }
+
+    private fun performHyperOsShortcutHaptic(
+        shortcutActions: Any,
+        function: String,
+        shortcut: String,
+        requested: Boolean,
+        effectKey: String?,
+        logger: ModuleLogger,
+    ) {
+        if (!requested || effectKey.isNullOrBlank()) return
+        val method = HookSupport.findMethod(
+            shortcutActions.javaClass,
+            "triggerHapticFeedback",
+            Boolean::class.javaPrimitiveType!!,
+            String::class.java,
+            String::class.java,
+            Boolean::class.javaPrimitiveType!!,
+            String::class.java,
+        ) ?: return
+        runCatching {
+            method.invoke(shortcutActions, true, shortcut, function, true, effectKey)
+        }.onFailure { throwable ->
+            logger.warnThrottled("hyperos_shortcut_haptic_failed") {
+                "HyperOSShortcut: 原生震感补发失败，type=${throwable.safeLogType()}"
+            }
+        }
+    }
+
+    internal fun shouldInterceptHyperOsVoiceAssistant(
+        function: String?,
+        shortcut: String?,
+        target: PowerAssistantTarget,
+    ): Boolean = target != PowerAssistantTarget.OEM &&
+        function == ModuleConfig.MIUI_LAUNCH_VOICE_ASSISTANT &&
+        shortcut == ModuleConfig.MIUI_LONG_PRESS_POWER_KEY
+
+    internal fun shouldInterceptHyperOsVoiceAssistantLaunch(
+        target: PowerAssistantTarget,
+    ): Boolean = target != PowerAssistantTarget.OEM
 
     private fun hookOplusSpeechHandler(
         hooks: HookRegistrar,

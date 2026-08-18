@@ -71,6 +71,15 @@ internal object AgentRuntimeWire {
     /** XiaoAi client -> service：返回一项 ToolsBridge 工具的终态结果。 */
     const val MSG_XIAOMI_TOOLS_BRIDGE_RESULT = 12
 
+    /** service -> injected host：执行一个仅宿主 UID 可用的工具调用。 */
+    const val MSG_HOST_CALL = 13
+
+    /** injected host -> service：宿主工具的流式事件。 */
+    const val MSG_HOST_EVENT = 14
+
+    /** injected host -> service：宿主工具的唯一终态。 */
+    const val MSG_HOST_RESULT = 15
+
     private const val MODULE_PACKAGE = "fuck.andes"
     private const val SERVICE_CLASS = "fuck.andes.agent.runtime.AgentRuntimeService"
 
@@ -138,6 +147,19 @@ internal object AgentRuntimeWire {
     private const val KEY_ENTRY_TOOL_ARGUMENTS = "entry_tool_arguments"
     private const val KEY_ENTRY_TOOL_RESULT = "entry_tool_result"
     private const val KEY_ENTRY_TOOL_SENSITIVE = "entry_tool_sensitive"
+    private const val KEY_HOST_CAPABILITIES = "host_capabilities"
+    private const val KEY_CALL_ID = "call_id"
+    private const val KEY_TOOL_NAME = "tool_name"
+    private const val KEY_ARGUMENTS_JSON = "arguments_json"
+    private const val KEY_ATTACHMENTS = "attachments"
+    private const val KEY_NAME = "name"
+    private const val KEY_URI = "uri"
+    private const val KEY_FILE_DESCRIPTOR = "file_descriptor"
+    private const val KEY_SESSION_ID = "session_id"
+    private const val KEY_PAYLOAD = "payload"
+    private const val KEY_ERROR_CODE = "error_code"
+    private const val KEY_ERROR_MESSAGE = "error_message"
+    private const val KEY_RETRYABLE = "retryable"
     private const val MAX_RESULT_CONTENT_CHARS = 64_000
     private const val MAX_RESULT_REASONING_CHARS = 32_000
     private const val MAX_DRAIN_CONTENT_CHARS = 16_000
@@ -150,6 +172,7 @@ internal object AgentRuntimeWire {
     private const val MAX_ENTRY_TOOL_ARGUMENT_BYTES = 64 * 1024
     private const val MAX_ENTRY_TOOL_RESULT_BYTES = 128 * 1024
     private const val MAX_XIAOMI_TOOLS_BRIDGE_CATALOG_CHARS = 256_000
+    private const val MAX_HOST_PAYLOAD_CHARS = 256_000
 
     data class RunRequest(
         val runId: String,
@@ -160,6 +183,7 @@ internal object AgentRuntimeWire {
         val handoff: EntryHandoff? = null,
         val entryTools: List<String> = emptyList(),
         val xiaomiToolsBridgeCatalogJson: String = "",
+        val hostCapabilities: Set<String> = emptySet(),
     )
 
     data class EntryToolCall(
@@ -311,6 +335,7 @@ internal object AgentRuntimeWire {
                 request.xiaomiToolsBridgeCatalogJson,
             )
         }
+        putStringArrayList(KEY_HOST_CAPABILITIES, ArrayList(request.hostCapabilities.sorted()))
         putParcelableArrayList(
             KEY_HISTORY,
             ArrayList(AgentConversationCodec.messagesForIpc(request.history).map { message ->
@@ -465,6 +490,7 @@ internal object AgentRuntimeWire {
             xiaomiToolsBridgeCatalogJson = validatedXiaomiToolsBridgeCatalog(
                 bundle.getString(KEY_XIAOMI_TOOLS_BRIDGE_CATALOG_JSON),
             ),
+            hostCapabilities = bundle.getStringArrayList(KEY_HOST_CAPABILITIES).orEmpty().toSet(),
         )
 
     fun entryToolCallToBundle(call: EntryToolCall): Bundle {
@@ -638,6 +664,89 @@ internal object AgentRuntimeWire {
 
     fun runIdFromBundle(bundle: Bundle): String =
         bundle.getString(KEY_RUN_ID).orEmpty()
+
+    fun hostCallToBundle(call: AgentHostCall): Bundle = Bundle().apply {
+        putString(KEY_CALL_ID, call.callId)
+        putString(KEY_TOOL_NAME, call.toolName)
+        putString(KEY_ARGUMENTS_JSON, call.argumentsJson)
+        putParcelableArrayList(KEY_ATTACHMENTS, ArrayList(call.attachments.map(::hostAttachmentToBundle)))
+    }
+
+    fun hostCallFromBundle(bundle: Bundle): AgentHostCall = AgentHostCall(
+        callId = bundle.getString(KEY_CALL_ID).orEmpty(),
+        toolName = bundle.getString(KEY_TOOL_NAME).orEmpty(),
+        argumentsJson = bundle.getString(KEY_ARGUMENTS_JSON).orEmpty(),
+        attachments = hostAttachmentsFromBundle(bundle),
+    )
+
+    fun hostEventToBundle(event: AgentHostEvent): Bundle = Bundle().apply {
+        putString(KEY_CALL_ID, event.callId)
+        putString(KEY_TYPE, event.type)
+        putString(KEY_SESSION_ID, event.sessionId)
+        putString(KEY_PAYLOAD, event.payload.boundedText(MAX_HOST_PAYLOAD_CHARS))
+    }
+
+    fun hostEventFromBundle(bundle: Bundle): AgentHostEvent = AgentHostEvent(
+        callId = bundle.getString(KEY_CALL_ID).orEmpty(),
+        type = bundle.getString(KEY_TYPE).orEmpty(),
+        sessionId = bundle.getString(KEY_SESSION_ID).orEmpty(),
+        payload = bundle.getString(KEY_PAYLOAD).orEmpty(),
+    )
+
+    fun hostResultToBundle(result: AgentHostResult): Bundle = Bundle().apply {
+        putString(KEY_CALL_ID, result.callId)
+        putBoolean(KEY_OK, result.ok)
+        putString(KEY_PAYLOAD, result.payload.boundedText(MAX_HOST_PAYLOAD_CHARS))
+        putString(KEY_ERROR_CODE, result.errorCode)
+        putString(KEY_ERROR_MESSAGE, result.errorMessage?.boundedText(MAX_DRAIN_CONTENT_CHARS))
+        putBoolean(KEY_RETRYABLE, result.retryable)
+        putParcelableArrayList(
+            KEY_ATTACHMENTS,
+            ArrayList(result.attachments.map(::hostAttachmentToBundle)),
+        )
+    }
+
+    fun hostResultFromBundle(bundle: Bundle): AgentHostResult = AgentHostResult(
+        callId = bundle.getString(KEY_CALL_ID).orEmpty(),
+        ok = bundle.getBoolean(KEY_OK),
+        payload = bundle.getString(KEY_PAYLOAD).orEmpty(),
+        errorCode = bundle.getString(KEY_ERROR_CODE),
+        errorMessage = bundle.getString(KEY_ERROR_MESSAGE),
+        retryable = bundle.getBoolean(KEY_RETRYABLE),
+        attachments = hostAttachmentsFromBundle(bundle),
+    )
+
+    fun closeHostAttachments(bundle: Bundle?) {
+        runCatching {
+            bundle?.getParcelableArrayList(KEY_ATTACHMENTS, Bundle::class.java).orEmpty()
+                .forEach { attachment ->
+                    attachment.getParcelable(
+                        KEY_FILE_DESCRIPTOR,
+                        ParcelFileDescriptor::class.java,
+                    )?.close()
+                }
+        }
+    }
+
+    private fun hostAttachmentToBundle(attachment: AgentHostAttachment): Bundle = Bundle().apply {
+        putString(KEY_NAME, attachment.name)
+        putString(KEY_MIME_TYPE, attachment.mimeType)
+        putString(KEY_URI, attachment.uri)
+        attachment.fileDescriptor?.let { putParcelable(KEY_FILE_DESCRIPTOR, it) }
+    }
+
+    private fun hostAttachmentsFromBundle(bundle: Bundle): List<AgentHostAttachment> =
+        bundle.getParcelableArrayList(KEY_ATTACHMENTS, Bundle::class.java).orEmpty().map { item ->
+            AgentHostAttachment(
+                name = item.getString(KEY_NAME).orEmpty(),
+                mimeType = item.getString(KEY_MIME_TYPE).orEmpty(),
+                uri = item.getString(KEY_URI),
+                fileDescriptor = item.getParcelable(
+                    KEY_FILE_DESCRIPTOR,
+                    ParcelFileDescriptor::class.java,
+                ),
+            )
+        }
 
     private fun String.boundedText(maxChars: Int): String =
         if (length <= maxChars) this else take((maxChars - TRUNCATED_SUFFIX.length).coerceAtLeast(0)) + TRUNCATED_SUFFIX

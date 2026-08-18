@@ -39,12 +39,16 @@ internal object ModuleConfig {
     const val PHONE_WINDOW_MANAGER_CLASS = "com.android.server.policy.PhoneWindowManager"
     const val OP_LUS_SPEECH_HANDLER_CLASS =
         "com.android.server.policy.PhoneWindowManagerExtImpl\$OplusSpeechHandler"
+    const val MIUI_SHORTCUT_ACTIONS_UTILS_CLASS =
+        "com.miui.server.input.util.ShortCutActionsUtils"
 
     const val CIRCLE_TO_SEARCH_ENTRYPOINT = 2
     const val COLOR_DIRECT_EXTRA_START_INFO = "startInfo"
     const val COLOR_DIRECT_EXTRA_DIRECT_EXT = "directExt"
     const val COLOR_DIRECT_DOUBLE_FINGER_COUNT = 2
     const val OP_LUS_ASSIST_MESSAGE_WHAT = 0x3F3
+    const val MIUI_LAUNCH_VOICE_ASSISTANT = "launch_voice_assistant"
+    const val MIUI_LONG_PRESS_POWER_KEY = "long_press_power_key"
     const val INTERCEPT_DEDUP_WINDOW_MS = 1_000L
 
     const val SPOOF_MANUFACTURER = "samsung"
