@@ -518,7 +518,7 @@ internal object XiaoAiHooks {
         )
         val future = try {
             executor.submit {
-                executeRun(logger, context, run)
+                executeRun(logger, classLoader, context, run)
             }
         } catch (_: RejectedExecutionException) {
             return false
@@ -546,11 +546,17 @@ internal object XiaoAiHooks {
 
     private fun executeRun(
         logger: ModuleLogger,
+        classLoader: ClassLoader,
         context: Context,
         run: ActiveRun,
     ) {
         if (!run.awaitActivation() || activeRun.get() !== run) return
-        val client = AgentRuntimeClient(context, logger)
+        val uiAgentBridge = XiaoAiUiAgentBridge(context, logger, classLoader)
+        val client = AgentRuntimeClient(
+            context = context,
+            logger = logger,
+            entryToolExecutor = uiAgentBridge,
+        )
         run.client.set(client)
         var resultRunId: String? = null
         try {
@@ -561,6 +567,7 @@ internal object XiaoAiHooks {
                     config = AgentModelClient.loadConfig(),
                     images = listOfNotNull(run.image),
                     handoff = run.toHandoff(),
+                    entryTools = uiAgentBridge.availableTools.sorted(),
                 ),
                 onEvent = { event ->
                     if (activeRun.get() === run && !run.cancelled.get()) {
@@ -587,6 +594,7 @@ internal object XiaoAiHooks {
             }
         } finally {
             resultRunId?.let { client.ackResult(it) }
+            uiAgentBridge.close()
             activeRun.clear(run)
         }
     }

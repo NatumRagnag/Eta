@@ -13,6 +13,7 @@ internal object AgentToolCatalog {
         skillGitHubDiscovery: Boolean = false,
         skillGitHubInstall: Boolean = false,
         memoryTools: Boolean = false,
+        entryTools: Set<String> = emptySet(),
     ): JSONArray =
         JSONArray().also { tools ->
             AgentContextAppToolCatalog.appendTo(tools)
@@ -31,6 +32,7 @@ internal object AgentToolCatalog {
                 githubInstall = skillGitHubInstall,
             )
             if (memoryTools) AgentMemoryToolCatalog.appendTo(tools)
+            XiaomiUiAgentToolCatalog.appendTo(tools, entryTools)
             if (terminalTools) {
                 AgentFileVisionToolCatalog.appendTo(tools)
                 AgentTerminalToolCatalog.appendTo(tools)

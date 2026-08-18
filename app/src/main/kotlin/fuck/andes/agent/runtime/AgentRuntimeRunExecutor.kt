@@ -1,10 +1,12 @@
 package fuck.andes.agent.runtime
 
 import android.content.Context
+import android.os.Messenger
 import fuck.andes.agent.accessibility.AgentAccessibilityKeeper
 import fuck.andes.agent.model.AgentModelClient
 import fuck.andes.agent.model.AgentModelExecutionException
 import fuck.andes.agent.model.AgentHttpClient
+import fuck.andes.agent.model.XiaomiUiAgentToolCatalog
 import fuck.andes.agent.memory.AgentMemoryContext
 import fuck.andes.agent.memory.AgentMemoryContextBuilder
 import fuck.andes.agent.overlay.AgentOverlayVisibilityPolicy
@@ -28,6 +30,7 @@ import kotlinx.coroutines.runBlocking
  */
 internal class AgentRuntimeRunExecutor(
     context: Context,
+    private val entryToolTarget: Messenger?,
     private val currentPermissions: () -> AgentRuntimePolicy.Permissions,
     private val snapshotRequest: (AgentRuntimeWire.RunRequest) -> AgentRuntimeWire.RunRequest,
     private val onAcceptedEvent: (AgentEvent, EntrySurfaceGuard?) -> Unit,
@@ -54,7 +57,8 @@ internal class AgentRuntimeRunExecutor(
         val runController = session.controller
         val archivedEvents = mutableListOf<AgentEvent>()
         var entrySurfaceGuard: EntrySurfaceGuard? = null
-        var toolExecutor: AgentLocalTools? = null
+        var localToolExecutor: AgentLocalTools? = null
+        var entryToolExecutor: AgentRuntimeEntryToolExecutor? = null
         var toolsBinding: AgentRunController.ResourceBinding? = null
         var response: AgentModelClient.ModelResponse.Text? = null
         var cancelled = false
@@ -91,6 +95,16 @@ internal class AgentRuntimeRunExecutor(
                 AgentMemoryContext.DISABLED
             }
             val pendingSkillConflict = PendingSkillConflictCapabilityParser.parse(request.history)
+            val enabledEntryTools = if (entryToolTarget == null) {
+                emptySet()
+            } else {
+                XiaomiUiAgentToolCatalog.enabledToolNames(
+                    availableTools = request.entryTools,
+                    directTools = request.config.deviceDirectTools,
+                    sensitiveReadTools = request.config.deviceSensitiveReadTools,
+                    sensitiveActionTools = request.config.deviceSensitiveActionTools,
+                )
+            }
             val executor = AgentLocalTools(
                 context = appContext,
                 logger = AndroidAgentLogger,
@@ -155,18 +169,63 @@ internal class AgentRuntimeRunExecutor(
                 runAvailableSkillIds = skillContext.installedSkills.mapTo(mutableSetOf()) { it.id },
                 pendingSkillConflict = pendingSkillConflict,
             )
-            toolExecutor = executor
-            toolsBinding = runController.register(executor::close)
+            localToolExecutor = executor
+            val remoteExecutor = entryToolTarget
+                ?.takeIf { enabledEntryTools.isNotEmpty() }
+                ?.let { target ->
+                    AgentRuntimeEntryToolExecutor(
+                        target = target,
+                        allowedTools = enabledEntryTools,
+                        directToolsEnabled = {
+                            request.config.deviceDirectTools && currentPermissions().deviceDirectTools
+                        },
+                        sensitiveReadToolsEnabled = {
+                            request.config.deviceSensitiveReadTools &&
+                                currentPermissions().deviceSensitiveReadTools
+                        },
+                        sensitiveActionToolsEnabled = {
+                            request.config.deviceSensitiveActionTools &&
+                                currentPermissions().deviceSensitiveActionTools
+                        },
+                        logger = AndroidAgentLogger,
+                        beforeToolExecution = { toolName ->
+                            if (
+                                AgentOverlayVisibilityPolicy.requiresEntrySurfaceDismissal(toolName) &&
+                                entrySurfaceGuard?.dismissOnce() == false
+                            ) {
+                                ToolExecutionDecision.Reject(
+                                    code = "ENTRY_SURFACE_NOT_READY",
+                                    message = "入口窗口尚未确认关闭；本次工具未执行，请稍后重试",
+                                )
+                            } else {
+                                ToolExecutionDecision.Allow
+                            }
+                        },
+                    )
+                }
+            entryToolExecutor = remoteExecutor
+            toolsBinding = runController.register {
+                remoteExecutor?.close()
+                executor.close()
+            }
+            val combinedExecutor = AgentModelClient.ToolExecutor { toolCall ->
+                if (toolCall.name in enabledEntryTools && remoteExecutor != null) {
+                    remoteExecutor.execute(toolCall)
+                } else {
+                    executor.execute(toolCall)
+                }
+            }
             timing.preparationFinished(skillContext.installedSkills.size)
             val completedResponse = AgentModelClient.complete(
                 config = request.config,
                 prompt = request.prompt,
-                toolExecutor = executor,
+                toolExecutor = combinedExecutor,
                 images = request.images,
                 history = request.history,
                 runController = runController,
                 skillContext = skillContext,
                 memoryContext = memoryContext,
+                entryTools = enabledEntryTools,
             ) { event ->
                 timing.accept(event)
                 acceptEvent(session, event, archivedEvents, entrySurfaceGuard)
@@ -206,7 +265,8 @@ internal class AgentRuntimeRunExecutor(
             )
         } finally {
             runCatching { toolsBinding?.close() }
-            runCatching { toolExecutor?.close() }
+            runCatching { entryToolExecutor?.close() }
+            runCatching { localToolExecutor?.close() }
         }
 
         if (cancelled) {

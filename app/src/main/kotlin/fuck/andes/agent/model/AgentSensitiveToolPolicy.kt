@@ -40,5 +40,14 @@ internal object AgentSensitiveToolPolicy {
         "set_setting",
         "memory_get",
         "memory_write",
+        "controlApp",
+        "favorite",
+        "write_memory",
+        "read_memory",
+        "image_to_text",
+        "trans_text",
+        "take_photo_recognize",
+        "trans_image",
+        "get_screen_context",
     )
 }

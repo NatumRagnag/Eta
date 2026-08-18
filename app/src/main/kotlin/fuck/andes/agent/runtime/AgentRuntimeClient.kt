@@ -6,11 +6,16 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.Message
 import android.os.Messenger
+import fuck.andes.agent.model.AgentModelClient
 import fuck.andes.core.AgentLogger
 import fuck.andes.core.safeLogType
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import org.json.JSONObject
 
 /**
  * 入口进程侧的 Runtime 客户端。
@@ -20,7 +25,8 @@ import java.util.concurrent.atomic.AtomicReference
  */
 internal class AgentRuntimeClient(
     private val context: Context,
-    private val logger: AgentLogger
+    private val logger: AgentLogger,
+    private val entryToolExecutor: AgentModelClient.ToolExecutor? = null,
 ) {
     fun run(
         request: AgentRuntimeWire.RunRequest,
@@ -29,6 +35,18 @@ internal class AgentRuntimeClient(
         val resultLatch = CountDownLatch(1)
         val resultRef = AtomicReference<AgentRuntimeWire.RunResult?>()
         val preparedImagesRef = AtomicReference<AgentRuntimeImageTransfer.PreparedImages?>()
+        val effectiveRequest = if (entryToolExecutor == null) {
+            request.copy(entryTools = emptyList())
+        } else {
+            request
+        }
+        val entryToolPool = if (effectiveRequest.entryTools.isNotEmpty()) {
+            Executors.newSingleThreadExecutor { runnable ->
+                Thread(runnable, "agent-entry-tools").apply { isDaemon = true }
+            }
+        } else {
+            null
+        }
         val clientMessenger = Messenger(
             ClientHandler(
                 onEvent = onEvent,
@@ -39,11 +57,16 @@ internal class AgentRuntimeClient(
                 onRequestIngested = {
                     preparedImagesRef.getAndSet(null)?.close()
                 },
+                entryToolExecutor = entryToolExecutor,
+                entryToolPool = entryToolPool,
+                logger = logger,
             )
         )
 
-        val lease = AgentRuntimeConnection.acquire(context, logger)
-            ?: return AgentRuntimeWire.RunResult("", false, "", "Agent Runtime 服务绑定失败")
+        val lease = AgentRuntimeConnection.acquire(context, logger) ?: run {
+            entryToolPool?.shutdownNow()
+            return AgentRuntimeWire.RunResult("", false, "", "Agent Runtime 服务绑定失败")
+        }
         val serviceMessenger = lease.messenger
         val deathRecipient = IBinder.DeathRecipient {
             if (resultRef.get() == null) {
@@ -58,9 +81,9 @@ internal class AgentRuntimeClient(
             lease.binder.linkToDeath(deathRecipient, 0)
             val msg = Message.obtain(null, AgentRuntimeWire.MSG_START_RUN)
             msg.replyTo = clientMessenger
-            val preparedImages = AgentRuntimeImageTransfer.prepare(context, request.images)
+            val preparedImages = AgentRuntimeImageTransfer.prepare(context, effectiveRequest.images)
             preparedImagesRef.set(preparedImages)
-            msg.data = AgentRuntimeWire.toBundle(request, preparedImages.images)
+            msg.data = AgentRuntimeWire.toBundle(effectiveRequest, preparedImages.images)
             serviceMessenger.send(msg)
             if (!resultLatch.await(RUN_TIMEOUT_MINUTES, TimeUnit.MINUTES)) {
                 runCatching {
@@ -98,6 +121,7 @@ internal class AgentRuntimeClient(
             )
         } finally {
             preparedImagesRef.getAndSet(null)?.close()
+            entryToolPool?.shutdownNow()
             runCatching { lease.binder.unlinkToDeath(deathRecipient, 0) }
             lease.close()
         }
@@ -160,6 +184,9 @@ internal class AgentRuntimeClient(
         private val onEvent: (AgentEvent) -> Unit,
         private val onResult: (AgentRuntimeWire.RunResult) -> Unit,
         private val onRequestIngested: () -> Unit,
+        private val entryToolExecutor: AgentModelClient.ToolExecutor?,
+        private val entryToolPool: ExecutorService?,
+        private val logger: AgentLogger,
     ) : Handler(Looper.getMainLooper()) {
         override fun handleMessage(msg: Message) {
             when (msg.what) {
@@ -172,8 +199,84 @@ internal class AgentRuntimeClient(
                 }
 
                 AgentRuntimeWire.MSG_REQUEST_INGESTED -> onRequestIngested()
+
+                AgentRuntimeWire.MSG_ENTRY_TOOL_REQUEST -> executeEntryTool(msg)
             }
         }
+
+        private fun executeEntryTool(message: Message) {
+            val replyTo = message.replyTo ?: return
+            val call = runCatching {
+                AgentRuntimeWire.entryToolCallFromBundle(message.data ?: error("缺少入口工具消息体"))
+            }.getOrElse { throwable ->
+                logger.warn("Entry tool request rejected: type=${throwable.safeLogType()}")
+                sendEntryToolResult(
+                    replyTo = replyTo,
+                    callId = "invalid",
+                    result = errorResult("INVALID_ENTRY_TOOL_REQUEST", "入口工具请求格式无效"),
+                )
+                return
+            }
+            val executor = entryToolExecutor
+            val pool = entryToolPool
+            if (executor == null || pool == null) {
+                sendEntryToolResult(
+                    replyTo,
+                    call.callId,
+                    errorResult("ENTRY_TOOL_NOT_AVAILABLE", "当前入口没有工具执行器"),
+                )
+                return
+            }
+            try {
+                pool.execute {
+                    val result = runCatching {
+                        executor.execute(
+                            AgentModelClient.ToolCall(
+                                id = call.callId,
+                                name = call.name,
+                                argumentsJson = call.argumentsJson,
+                            )
+                        )
+                    }.getOrElse { throwable ->
+                        logger.warn("Entry tool execution failed: type=${throwable.safeLogType()}")
+                        errorResult(
+                            "ENTRY_TOOL_EXECUTION_ERROR",
+                            "入口工具执行失败（${throwable.safeLogType()}）",
+                        )
+                    }
+                    sendEntryToolResult(replyTo, call.callId, result)
+                }
+            } catch (_: RejectedExecutionException) {
+                sendEntryToolResult(
+                    replyTo,
+                    call.callId,
+                    errorResult("ENTRY_TOOL_CANCELLED", "入口工具执行队列已关闭"),
+                )
+            }
+        }
+
+        private fun sendEntryToolResult(
+            replyTo: Messenger,
+            callId: String,
+            result: AgentModelClient.ToolResult,
+        ) {
+            runCatching {
+                val response = Message.obtain(null, AgentRuntimeWire.MSG_ENTRY_TOOL_RESULT)
+                response.data = AgentRuntimeWire.entryToolResultToBundle(callId, result)
+                replyTo.send(response)
+            }.onFailure { throwable ->
+                logger.warn("Entry tool result delivery failed: type=${throwable.safeLogType()}")
+            }
+        }
+
+        private fun errorResult(code: String, message: String): AgentModelClient.ToolResult =
+            AgentModelClient.ToolResult(
+                content = JSONObject()
+                    .put("ok", false)
+                    .put("code", code)
+                    .put("message", message)
+                    .toString(),
+            )
     }
 
     private class DrainHandler(

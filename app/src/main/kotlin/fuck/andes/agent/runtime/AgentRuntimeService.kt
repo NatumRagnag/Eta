@@ -290,9 +290,14 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         request: AgentRuntimeWire.RunRequest,
         replyTo: Messenger? = null,
     ) {
+        val executableRequest = if (replyTo == null && request.entryTools.isNotEmpty()) {
+            request.copy(entryTools = emptyList())
+        } else {
+            request
+        }
         activeSession?.cancel("已被新的 Agent 任务替换")
         val session = AgentRuntimeSession(
-            runId = request.runId,
+            runId = executableRequest.runId,
             eventSink = { event -> sendEventTo(replyTo, event) },
             resultSink = { result -> sendResultTo(replyTo, result) },
         )
@@ -312,8 +317,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         synchronized(supplementsLock) {
             activeSupplements.clear()
             nextSupplementIndex = 1
-            if (request.handoff?.source == AGENT_UI_HANDOFF_SOURCE) {
-                val payload = AgentUiHandoffPayload.from(request.handoff.payload)
+            if (executableRequest.handoff?.source == AGENT_UI_HANDOFF_SOURCE) {
+                val payload = AgentUiHandoffPayload.from(executableRequest.handoff.payload)
                 activeSupplements += payload.supplements
                 nextSupplementIndex = (
                     listOfNotNull(payload.promptSupplement?.index) +
@@ -322,15 +327,17 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
         }
 
-        thread(name = "agent-runtime") { executeRun(session, request) }
+        thread(name = "agent-runtime") { executeRun(session, executableRequest, replyTo) }
     }
 
     private fun executeRun(
         session: AgentRuntimeSession,
         request: AgentRuntimeWire.RunRequest,
+        entryToolTarget: Messenger?,
     ) {
         val outcome = AgentRuntimeRunExecutor(
             context = this,
+            entryToolTarget = entryToolTarget,
             currentPermissions = ::currentRuntimePermissions,
             snapshotRequest = { it.withActiveSupplements() },
             onAcceptedEvent = { event, entrySurfaceGuard ->

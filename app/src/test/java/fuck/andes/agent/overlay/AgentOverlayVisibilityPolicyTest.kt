@@ -197,4 +197,19 @@ class AgentOverlayVisibilityPolicyTest {
         assertFalse(AgentOverlayVisibilityPolicy.shouldRevealFor(event))
         assertFalse(AgentOverlayVisibilityPolicy.isForegroundOperationTool("set_alarm"))
     }
+
+    @Test
+    fun `xiaomi uiagent foreground calls dismiss the entry and reveal runtime status`() {
+        listOf("controlApp", "favorite", "take_photo_recognize", "play_media_tool").forEach { name ->
+            val event = AgentEvent.ToolStarted(
+                round = 1,
+                toolCallId = "call_uiagent",
+                name = name,
+                argsPreview = "参数已接收",
+            )
+
+            assertTrue(name, AgentOverlayVisibilityPolicy.shouldDismissEntrySurfaceFor(event))
+            assertTrue(name, AgentOverlayVisibilityPolicy.shouldRevealFor(event))
+        }
+    }
 }

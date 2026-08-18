@@ -89,6 +89,7 @@ internal object AgentModelClient {
         runController: AgentRunController = AgentRunController(),
         skillContext: SkillContext = SkillContext.EMPTY,
         memoryContext: AgentMemoryContext = AgentMemoryContext.DISABLED,
+        entryTools: Set<String> = emptySet(),
         onEvent: (AgentEvent) -> Unit = {}
     ): ModelResponse.Text {
         config.validate()
@@ -110,6 +111,7 @@ internal object AgentModelClient {
             skillGitHubDiscovery = true,
             skillGitHubInstall = true,
             memoryTools = memoryContext.enabled,
+            entryTools = entryTools,
         )
         onEvent(
             AgentEvent.RunStarted(

@@ -256,6 +256,7 @@ class AgentRuntimeWireTest {
                 source = "overlay",
                 payload = """{"package":"com.tencent.mm"}""",
             ),
+            entryTools = listOf("controlApp", "read_memory"),
         )
 
         val bundle = AgentRuntimeWire.toLegacyBundle(request)
@@ -266,6 +267,29 @@ class AgentRuntimeWireTest {
         assertEquals(request, roundTripped)
         assertEquals(262_144, roundTripped.config.contextWindow)
         assertEquals(ReasoningEffort.HIGH, roundTripped.config.reasoningEffort)
+    }
+
+    @Test
+    fun entryToolCallAndResultBundlesRoundTripWithoutImages() {
+        val call = AgentRuntimeWire.EntryToolCall(
+            callId = "entry-1",
+            name = "read_memory",
+            argumentsJson = """{"keywords":"地址"}""",
+        )
+        val roundTrippedCall = AgentRuntimeWire.entryToolCallFromBundle(
+            AgentRuntimeWire.entryToolCallToBundle(call)
+        )
+        assertEquals(call, roundTrippedCall)
+
+        val result = AgentModelClient.ToolResult(
+            content = """{"ok":true,"items":[]}""",
+            sensitive = true,
+        )
+        val (callId, roundTrippedResult) = AgentRuntimeWire.entryToolResultFromBundle(
+            AgentRuntimeWire.entryToolResultToBundle(call.callId, result)
+        )
+        assertEquals(call.callId, callId)
+        assertEquals(result, roundTrippedResult)
     }
 
     @Test

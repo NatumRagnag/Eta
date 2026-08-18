@@ -59,6 +59,12 @@ internal object AgentRuntimeWire {
     /** service -> client：请求图片已经摄取，入口进程可以关闭文件描述符并删除临时文件。 */
     const val MSG_REQUEST_INGESTED = 8
 
+    /** service -> client：请求入口进程代执行一个已声明的工具。 */
+    const val MSG_ENTRY_TOOL_REQUEST = 9
+
+    /** client -> 单次回调 Messenger：返回入口工具结果。 */
+    const val MSG_ENTRY_TOOL_RESULT = 10
+
     private const val MODULE_PACKAGE = "fuck.andes"
     private const val SERVICE_CLASS = "fuck.andes.agent.runtime.AgentRuntimeService"
 
@@ -83,6 +89,7 @@ internal object AgentRuntimeWire {
     private const val KEY_DEVICE_DIRECT_TOOLS = "device_direct_tools"
     private const val KEY_DEVICE_SENSITIVE_READ_TOOLS = "device_sensitive_read_tools"
     private const val KEY_DEVICE_SENSITIVE_ACTION_TOOLS = "device_sensitive_action_tools"
+    private const val KEY_ENTRY_TOOLS = "entry_tools"
     private const val KEY_THINKING_ENABLED = "thinking_enabled"
     private const val KEY_REASONING_EFFORT = "reasoning_effort"
     private const val KEY_REASONING_CAPABILITIES_JSON = "reasoning_capabilities_json"
@@ -118,12 +125,22 @@ internal object AgentRuntimeWire {
     private const val LEGACY_BREENO_HANDOFF_SOURCE = "breeno"
     private const val KEY_CREATED_AT = "created_at"
     private const val KEY_RESULTS = "results"
+    private const val KEY_ENTRY_TOOL_CALL_ID = "entry_tool_call_id"
+    private const val KEY_ENTRY_TOOL_NAME = "entry_tool_name"
+    private const val KEY_ENTRY_TOOL_ARGUMENTS = "entry_tool_arguments"
+    private const val KEY_ENTRY_TOOL_RESULT = "entry_tool_result"
+    private const val KEY_ENTRY_TOOL_SENSITIVE = "entry_tool_sensitive"
     private const val MAX_RESULT_CONTENT_CHARS = 64_000
     private const val MAX_RESULT_REASONING_CHARS = 32_000
     private const val MAX_DRAIN_CONTENT_CHARS = 16_000
     private const val MAX_DRAIN_REASONING_CHARS = 4_000
     private const val TRUNCATED_SUFFIX = "\n\n[跨进程结果过长，已截断]"
     private const val MAX_START_REQUEST_PARCEL_BYTES = 768 * 1024
+    private const val MAX_ENTRY_TOOLS = 32
+    private const val MAX_ENTRY_TOOL_NAME_CHARS = 80
+    private const val MAX_ENTRY_TOOL_CALL_ID_CHARS = 128
+    private const val MAX_ENTRY_TOOL_ARGUMENT_BYTES = 64 * 1024
+    private const val MAX_ENTRY_TOOL_RESULT_BYTES = 128 * 1024
 
     data class RunRequest(
         val runId: String,
@@ -131,7 +148,14 @@ internal object AgentRuntimeWire {
         val config: AgentModelClient.ModelConfig,
         val images: List<AgentModelClient.ModelImage>,
         val history: List<AgentModelClient.ConversationMessage> = emptyList(),
-        val handoff: EntryHandoff? = null
+        val handoff: EntryHandoff? = null,
+        val entryTools: List<String> = emptyList(),
+    )
+
+    data class EntryToolCall(
+        val callId: String,
+        val name: String,
+        val argumentsJson: String,
     )
 
     /**
@@ -245,6 +269,19 @@ internal object AgentRuntimeWire {
         putBoolean(KEY_DEVICE_DIRECT_TOOLS, request.config.deviceDirectTools)
         putBoolean(KEY_DEVICE_SENSITIVE_READ_TOOLS, request.config.deviceSensitiveReadTools)
         putBoolean(KEY_DEVICE_SENSITIVE_ACTION_TOOLS, request.config.deviceSensitiveActionTools)
+        putStringArrayList(
+            KEY_ENTRY_TOOLS,
+            ArrayList(
+                request.entryTools
+                    .asSequence()
+                    .map(String::trim)
+                    .filter(String::isNotEmpty)
+                    .filter { it.length <= MAX_ENTRY_TOOL_NAME_CHARS }
+                    .distinct()
+                    .take(MAX_ENTRY_TOOLS)
+                    .toList()
+            ),
+        )
         putBoolean(KEY_THINKING_ENABLED, request.config.effectiveReasoningEffort.enablesReasoning)
         putString(KEY_REASONING_EFFORT, request.config.effectiveReasoningEffort.wireValue)
         request.config.reasoningCapabilities?.let {
@@ -395,8 +432,91 @@ internal object AgentRuntimeWire {
                 )
             },
             images = images,
-            handoff = bundle.getBundle(KEY_HANDOFF)?.let(::entryHandoffFromBundle)
+            handoff = bundle.getBundle(KEY_HANDOFF)?.let(::entryHandoffFromBundle),
+            entryTools = bundle.getStringArrayList(KEY_ENTRY_TOOLS)
+                .orEmpty()
+                .asSequence()
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .filter { it.length <= MAX_ENTRY_TOOL_NAME_CHARS }
+                .distinct()
+                .take(MAX_ENTRY_TOOLS)
+                .toList(),
         )
+
+    fun entryToolCallToBundle(call: EntryToolCall): Bundle {
+        require(call.callId.isNotBlank() && call.callId.length <= MAX_ENTRY_TOOL_CALL_ID_CHARS) {
+            "入口工具调用 ID 无效"
+        }
+        require(call.name.isNotBlank() && call.name.length <= MAX_ENTRY_TOOL_NAME_CHARS) {
+            "入口工具名称无效"
+        }
+        require(call.argumentsJson.toByteArray(Charsets.UTF_8).size <= MAX_ENTRY_TOOL_ARGUMENT_BYTES) {
+            "入口工具参数过大"
+        }
+        return Bundle().apply {
+            putString(KEY_ENTRY_TOOL_CALL_ID, call.callId)
+            putString(KEY_ENTRY_TOOL_NAME, call.name)
+            putString(KEY_ENTRY_TOOL_ARGUMENTS, call.argumentsJson)
+        }
+    }
+
+    fun entryToolCallFromBundle(bundle: Bundle): EntryToolCall {
+        val call = EntryToolCall(
+            callId = bundle.getString(KEY_ENTRY_TOOL_CALL_ID).orEmpty(),
+            name = bundle.getString(KEY_ENTRY_TOOL_NAME).orEmpty(),
+            argumentsJson = bundle.getString(KEY_ENTRY_TOOL_ARGUMENTS).orEmpty().ifBlank { "{}" },
+        )
+        require(call.callId.isNotBlank() && call.callId.length <= MAX_ENTRY_TOOL_CALL_ID_CHARS) {
+            "入口工具调用 ID 无效"
+        }
+        require(call.name.isNotBlank() && call.name.length <= MAX_ENTRY_TOOL_NAME_CHARS) {
+            "入口工具名称无效"
+        }
+        require(call.argumentsJson.toByteArray(Charsets.UTF_8).size <= MAX_ENTRY_TOOL_ARGUMENT_BYTES) {
+            "入口工具参数过大"
+        }
+        return call
+    }
+
+    fun entryToolResultToBundle(
+        callId: String,
+        result: AgentModelClient.ToolResult,
+    ): Bundle {
+        val bounded = if (
+            result.content.toByteArray(Charsets.UTF_8).size <= MAX_ENTRY_TOOL_RESULT_BYTES
+        ) {
+            result
+        } else {
+            AgentModelClient.ToolResult(
+                content = "{\"ok\":false,\"code\":\"ENTRY_TOOL_RESULT_TOO_LARGE\"," +
+                    "\"message\":\"入口工具结果超过 128 KiB，已拒绝跨进程传输\"}",
+                sensitive = result.sensitive,
+            )
+        }
+        return Bundle().apply {
+            putString(KEY_ENTRY_TOOL_CALL_ID, callId.take(MAX_ENTRY_TOOL_CALL_ID_CHARS))
+            putString(KEY_ENTRY_TOOL_RESULT, bounded.content)
+            putBoolean(KEY_ENTRY_TOOL_SENSITIVE, bounded.sensitive)
+        }
+    }
+
+    fun entryToolResultFromBundle(
+        bundle: Bundle,
+    ): Pair<String, AgentModelClient.ToolResult> {
+        val callId = bundle.getString(KEY_ENTRY_TOOL_CALL_ID).orEmpty()
+        require(callId.isNotBlank() && callId.length <= MAX_ENTRY_TOOL_CALL_ID_CHARS) {
+            "入口工具结果 ID 无效"
+        }
+        val content = bundle.getString(KEY_ENTRY_TOOL_RESULT).orEmpty()
+        require(content.toByteArray(Charsets.UTF_8).size <= MAX_ENTRY_TOOL_RESULT_BYTES) {
+            "入口工具结果过大"
+        }
+        return callId to AgentModelClient.ToolResult(
+            content = content,
+            sensitive = bundle.getBoolean(KEY_ENTRY_TOOL_SENSITIVE, false),
+        )
+    }
 
     fun toBundle(handoff: EntryHandoff): Bundle = Bundle().apply {
         putString(KEY_HANDOFF_ID, handoff.id)
