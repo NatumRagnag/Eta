@@ -84,5 +84,5 @@ internal object AgentOverlayVisibilityPolicy {
     )
 
     private val entrySurfaceDismissalTools =
-        foregroundOperationTools + setOf("set_alarm", "set_timer")
+        foregroundOperationTools + setOf("set_alarm", "set_timer", "xiaomi_dial_phone")
 }

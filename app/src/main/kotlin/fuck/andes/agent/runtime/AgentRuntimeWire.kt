@@ -65,6 +65,12 @@ internal object AgentRuntimeWire {
     /** client -> 单次回调 Messenger：返回入口工具结果。 */
     const val MSG_ENTRY_TOOL_RESULT = 10
 
+    /** service -> XiaoAi client：请求在超级小爱进程内执行一项白名单 ToolsBridge 工具。 */
+    const val MSG_XIAOMI_TOOLS_BRIDGE_CALL = 11
+
+    /** XiaoAi client -> service：返回一项 ToolsBridge 工具的终态结果。 */
+    const val MSG_XIAOMI_TOOLS_BRIDGE_RESULT = 12
+
     private const val MODULE_PACKAGE = "fuck.andes"
     private const val SERVICE_CLASS = "fuck.andes.agent.runtime.AgentRuntimeService"
 
@@ -122,6 +128,8 @@ internal object AgentRuntimeWire {
     private const val KEY_HANDOFF_PAYLOAD = "handoff_payload"
     private const val KEY_HANDOFF_DISMISS_ENTRY_SURFACE_ON_FOREGROUND_OPERATION =
         "handoff_dismiss_entry_surface_on_foreground_operation"
+    private const val KEY_XIAOMI_TOOLS_BRIDGE_CATALOG_JSON =
+        "xiaomi_tools_bridge_catalog_json"
     private const val LEGACY_BREENO_HANDOFF_SOURCE = "breeno"
     private const val KEY_CREATED_AT = "created_at"
     private const val KEY_RESULTS = "results"
@@ -141,6 +149,7 @@ internal object AgentRuntimeWire {
     private const val MAX_ENTRY_TOOL_CALL_ID_CHARS = 128
     private const val MAX_ENTRY_TOOL_ARGUMENT_BYTES = 64 * 1024
     private const val MAX_ENTRY_TOOL_RESULT_BYTES = 128 * 1024
+    private const val MAX_XIAOMI_TOOLS_BRIDGE_CATALOG_CHARS = 256_000
 
     data class RunRequest(
         val runId: String,
@@ -150,6 +159,7 @@ internal object AgentRuntimeWire {
         val history: List<AgentModelClient.ConversationMessage> = emptyList(),
         val handoff: EntryHandoff? = null,
         val entryTools: List<String> = emptyList(),
+        val xiaomiToolsBridgeCatalogJson: String = "",
     )
 
     data class EntryToolCall(
@@ -291,6 +301,16 @@ internal object AgentRuntimeWire {
         putString(KEY_CUSTOM_HEADERS_JSON, json.encodeToString(request.config.customHeaders))
         putString(KEY_CUSTOM_BODY_JSON, json.encodeToString(request.config.customBody))
         request.handoff?.let { putBundle(KEY_HANDOFF, toBundle(it)) }
+        if (request.xiaomiToolsBridgeCatalogJson.isNotBlank()) {
+            require(
+                request.xiaomiToolsBridgeCatalogJson.length <=
+                    MAX_XIAOMI_TOOLS_BRIDGE_CATALOG_CHARS,
+            ) { "超级小爱 ToolsBridge 能力目录过大" }
+            putString(
+                KEY_XIAOMI_TOOLS_BRIDGE_CATALOG_JSON,
+                request.xiaomiToolsBridgeCatalogJson,
+            )
+        }
         putParcelableArrayList(
             KEY_HISTORY,
             ArrayList(AgentConversationCodec.messagesForIpc(request.history).map { message ->
@@ -442,6 +462,9 @@ internal object AgentRuntimeWire {
                 .distinct()
                 .take(MAX_ENTRY_TOOLS)
                 .toList(),
+            xiaomiToolsBridgeCatalogJson = validatedXiaomiToolsBridgeCatalog(
+                bundle.getString(KEY_XIAOMI_TOOLS_BRIDGE_CATALOG_JSON),
+            ),
         )
 
     fun entryToolCallToBundle(call: EntryToolCall): Bundle {
@@ -914,5 +937,13 @@ internal object AgentRuntimeWire {
     private fun decodeReasoningCapabilities(raw: String?): ModelReasoningCapabilities? =
         if (raw.isNullOrBlank()) null
         else runCatching { json.decodeFromString<ModelReasoningCapabilities>(raw) }.getOrNull()
+
+    private fun validatedXiaomiToolsBridgeCatalog(raw: String?): String {
+        val value = raw.orEmpty()
+        require(value.length <= MAX_XIAOMI_TOOLS_BRIDGE_CATALOG_CHARS) {
+            "超级小爱 ToolsBridge 能力目录过大"
+        }
+        return value
+    }
 
 }

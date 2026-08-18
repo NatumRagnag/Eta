@@ -41,6 +41,7 @@ import fuck.andes.agent.overlay.AgentOverlayState
 import fuck.andes.agent.overlay.AgentOverlayStatus
 import fuck.andes.agent.overlay.AgentOverlayVisibilityPolicy
 import fuck.andes.agent.overlay.applyEvent
+import fuck.andes.agent.xiaomi.XiaomiToolsBridgeProtocol
 import fuck.andes.config.Prefs
 import fuck.andes.core.AndroidAgentLogger
 import fuck.andes.core.ModuleConfig
@@ -69,6 +70,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val serviceMessenger = Messenger(IncomingHandler())
+    private val xiaomiToolsBridgeRemoteCaller =
+        XiaomiToolsBridgeRemoteCaller(serviceMessenger)
 
     @Volatile
     private var activeSession: AgentRuntimeSession? = null
@@ -148,6 +151,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         pendingStartRequest = null
         activeSession?.cancel("Agent Runtime 服务已停止")
         activeSession = null
+        xiaomiToolsBridgeRemoteCaller.close()
         mainHandler.removeCallbacksAndMessages(null)
         resultCardView?.let { view -> runCatching { windowManager?.removeView(view) } }
         bubbleView?.let { view -> runCatching { windowManager?.removeView(view) } }
@@ -213,6 +217,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
                 AgentRuntimeWire.MSG_DRAIN_RESULTS -> {
                     sendDrainedResults(msg.replyTo)
+                }
+
+                AgentRuntimeWire.MSG_XIAOMI_TOOLS_BRIDGE_RESULT -> {
+                    val result = msg.data?.let(XiaomiToolsBridgeProtocol::callResultFromBundle)
+                    if (result != null) xiaomiToolsBridgeRemoteCaller.accept(result)
                 }
             }
         }
@@ -333,17 +342,20 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun executeRun(
         session: AgentRuntimeSession,
         request: AgentRuntimeWire.RunRequest,
-        entryToolTarget: Messenger?,
+        entryMessenger: Messenger?,
     ) {
         val outcome = AgentRuntimeRunExecutor(
             context = this,
-            entryToolTarget = entryToolTarget,
+            entryToolTarget = entryMessenger,
             currentPermissions = ::currentRuntimePermissions,
             snapshotRequest = { it.withActiveSupplements() },
             onAcceptedEvent = { event, entrySurfaceGuard ->
                 handleAcceptedRunEvent(session, event, entrySurfaceGuard)
             },
             persistArtifacts = ::persistRunArtifacts,
+            xiaomiToolsBridgeInvoker = entryMessenger?.let { target ->
+                { call -> xiaomiToolsBridgeRemoteCaller.call(target, call) }
+            },
         ).execute(session, request)
         if (!outcome.shouldUpdateHost) return
         postTerminalOverlay(

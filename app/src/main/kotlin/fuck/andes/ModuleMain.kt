@@ -98,6 +98,7 @@ class ModuleMain : XposedModule() {
                             module = this,
                             rootLogger = logger,
                             classLoader = param.classLoader,
+                            enableToolsBridge = currentProcessName == ModuleConfig.XIAOAI_PACKAGE,
                         )
                     )
                 }

@@ -31,6 +31,7 @@ import fuck.andes.agent.skill.GitHubSkillSourceException
 import fuck.andes.agent.skill.PublicGitHubSkillSource
 import fuck.andes.agent.terminal.AlpineEnvironmentPaths
 import fuck.andes.agent.terminal.RootShellTerminalController
+import fuck.andes.agent.xiaomi.XiaomiToolsBridgeRemoteExecutor
 import fuck.andes.config.Prefs
 import fuck.andes.core.AgentLogger
 import fuck.andes.core.HookSupport
@@ -82,6 +83,7 @@ internal class AgentLocalTools(
     private val skillPackageInstaller: SkillPackageInstaller? = null,
     runAvailableSkillIds: Set<String> = emptySet(),
     pendingSkillConflict: PendingSkillConflictCapability? = null,
+    private val xiaomiToolsBridgeExecutor: XiaomiToolsBridgeRemoteExecutor? = null,
 ) : AgentModelClient.ToolExecutor, AutoCloseable {
 
     private val closed = AtomicBoolean(false)
@@ -114,6 +116,7 @@ internal class AgentLocalTools(
         terminalController.interruptAll()
         rootCommandExecutor.close()
         githubSkillSource?.close()
+        xiaomiToolsBridgeExecutor?.close()
         inspectedGitHubSnapshots.clear()
     }
 
@@ -181,6 +184,9 @@ internal class AgentLocalTools(
                 in DEVICE_TOOL_NAMES ->
                     structuredDeviceTools.execute(toolCall.name, args)
                         ?: textResult(errorResult("UNKNOWN_TOOL", "未知设备工具"))
+                in xiaomiToolsBridgeExecutor?.toolNames.orEmpty() ->
+                    xiaomiToolsBridgeExecutor?.execute(toolCall)
+                        ?: textResult(errorResult("XIAOMI_BRIDGE_UNAVAILABLE", "超级小爱 ToolsBridge 不可用"))
                 "read_image" -> fileVisionTool { imageTools.readImage(args) }
                 "terminal" -> textResult(terminalTool { terminal(args) })
                 "run_command" -> textResult(terminalTool { runCommand(args) })

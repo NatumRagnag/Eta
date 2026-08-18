@@ -1,6 +1,7 @@
 package fuck.andes.agent.runtime
 
 import android.content.Context
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -9,6 +10,8 @@ import android.os.Messenger
 import fuck.andes.agent.model.AgentModelClient
 import fuck.andes.core.AgentLogger
 import fuck.andes.core.safeLogType
+import fuck.andes.agent.xiaomi.XiaomiToolsBridgeEndpoint
+import fuck.andes.agent.xiaomi.XiaomiToolsBridgeProtocol
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -27,6 +30,7 @@ internal class AgentRuntimeClient(
     private val context: Context,
     private val logger: AgentLogger,
     private val entryToolExecutor: AgentModelClient.ToolExecutor? = null,
+    private val xiaomiToolsBridgeEndpoint: XiaomiToolsBridgeEndpoint? = null,
 ) {
     fun run(
         request: AgentRuntimeWire.RunRequest,
@@ -60,6 +64,7 @@ internal class AgentRuntimeClient(
                 entryToolExecutor = entryToolExecutor,
                 entryToolPool = entryToolPool,
                 logger = logger,
+                xiaomiToolsBridgeEndpoint = xiaomiToolsBridgeEndpoint,
             )
         )
 
@@ -187,6 +192,7 @@ internal class AgentRuntimeClient(
         private val entryToolExecutor: AgentModelClient.ToolExecutor?,
         private val entryToolPool: ExecutorService?,
         private val logger: AgentLogger,
+        private val xiaomiToolsBridgeEndpoint: XiaomiToolsBridgeEndpoint?,
     ) : Handler(Looper.getMainLooper()) {
         override fun handleMessage(msg: Message) {
             when (msg.what) {
@@ -201,6 +207,52 @@ internal class AgentRuntimeClient(
                 AgentRuntimeWire.MSG_REQUEST_INGESTED -> onRequestIngested()
 
                 AgentRuntimeWire.MSG_ENTRY_TOOL_REQUEST -> executeEntryTool(msg)
+
+                AgentRuntimeWire.MSG_XIAOMI_TOOLS_BRIDGE_CALL -> {
+                    val data = msg.data ?: Bundle.EMPTY
+                    val request = XiaomiToolsBridgeProtocol.callRequestFromBundle(data)
+                    val resultTarget = msg.replyTo
+                    if (request == null) {
+                        sendXiaomiToolsBridgeResult(
+                            resultTarget,
+                            XiaomiToolsBridgeProtocol.CallResult(
+                                callId = XiaomiToolsBridgeProtocol.callIdFromBundle(data),
+                                status = XiaomiToolsBridgeProtocol.Status.INVALID_REQUEST,
+                                error = "ToolsBridge 请求格式无效",
+                            ),
+                        )
+                        return
+                    }
+                    val endpoint = xiaomiToolsBridgeEndpoint
+                    if (endpoint == null) {
+                        sendXiaomiToolsBridgeResult(
+                            resultTarget,
+                            XiaomiToolsBridgeProtocol.CallResult(
+                                callId = request.callId,
+                                status = XiaomiToolsBridgeProtocol.Status.UNAVAILABLE,
+                                error = "当前入口没有超级小爱 ToolsBridge",
+                            ),
+                        )
+                        return
+                    }
+                    endpoint.execute(request) { result ->
+                        sendXiaomiToolsBridgeResult(resultTarget, result)
+                    }
+                }
+            }
+        }
+
+        private fun sendXiaomiToolsBridgeResult(
+            target: Messenger?,
+            result: XiaomiToolsBridgeProtocol.CallResult,
+        ) {
+            runCatching {
+                val response = Message.obtain(
+                    null,
+                    AgentRuntimeWire.MSG_XIAOMI_TOOLS_BRIDGE_RESULT,
+                )
+                response.data = XiaomiToolsBridgeProtocol.callResultBundle(result)
+                target?.send(response)
             }
         }
 

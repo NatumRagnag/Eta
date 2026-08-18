@@ -5,6 +5,7 @@ import fuck.andes.agent.runtime.AgentRunCancelledException
 import fuck.andes.agent.runtime.AgentRunController
 import fuck.andes.agent.memory.AgentMemoryContext
 import fuck.andes.agent.skill.SkillContext
+import fuck.andes.agent.xiaomi.XiaomiToolsBridgeProtocol
 import fuck.andes.config.Prefs
 import fuck.andes.data.model.AnthropicProviderSetting
 import fuck.andes.data.model.CustomBody
@@ -90,6 +91,8 @@ internal object AgentModelClient {
         skillContext: SkillContext = SkillContext.EMPTY,
         memoryContext: AgentMemoryContext = AgentMemoryContext.DISABLED,
         entryTools: Set<String> = emptySet(),
+        xiaomiToolsBridgeCatalog: XiaomiToolsBridgeProtocol.Catalog =
+            XiaomiToolsBridgeProtocol.Catalog.EMPTY,
         onEvent: (AgentEvent) -> Unit = {}
     ): ModelResponse.Text {
         config.validate()
@@ -112,6 +115,7 @@ internal object AgentModelClient {
             skillGitHubInstall = true,
             memoryTools = memoryContext.enabled,
             entryTools = entryTools,
+            xiaomiToolsBridgeCatalog = xiaomiToolsBridgeCatalog,
         )
         onEvent(
             AgentEvent.RunStarted(

@@ -257,6 +257,8 @@ class AgentRuntimeWireTest {
                 payload = """{"package":"com.tencent.mm"}""",
             ),
             entryTools = listOf("controlApp", "read_memory"),
+            xiaomiToolsBridgeCatalogJson =
+                """{"version":1,"tools":[]}""",
         )
 
         val bundle = AgentRuntimeWire.toLegacyBundle(request)
