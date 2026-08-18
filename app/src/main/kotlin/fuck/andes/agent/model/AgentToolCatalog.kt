@@ -1,5 +1,6 @@
 package fuck.andes.agent.model
 
+import fuck.andes.agent.xiaomi.XiaomiToolsBridgeProtocol
 import org.json.JSONArray
 
 /** 声明模型可见的工具及其 JSON Schema；不包含任何执行逻辑。 */
@@ -13,6 +14,8 @@ internal object AgentToolCatalog {
         skillGitHubDiscovery: Boolean = false,
         skillGitHubInstall: Boolean = false,
         memoryTools: Boolean = false,
+        xiaomiToolsBridgeCatalog: XiaomiToolsBridgeProtocol.Catalog =
+            XiaomiToolsBridgeProtocol.Catalog.EMPTY,
     ): JSONArray =
         JSONArray().also { tools ->
             AgentContextAppToolCatalog.appendTo(tools)
@@ -31,6 +34,11 @@ internal object AgentToolCatalog {
                 githubInstall = skillGitHubInstall,
             )
             if (memoryTools) AgentMemoryToolCatalog.appendTo(tools)
+            xiaomiToolsBridgeCatalog.visibleDefinitions(
+                directTools = deviceDirectTools,
+                sensitiveReadTools = deviceSensitiveReadTools,
+                sensitiveActionTools = deviceSensitiveActionTools,
+            ).forEach { definition -> tools.put(definition.asModelTool()) }
             if (terminalTools) {
                 AgentFileVisionToolCatalog.appendTo(tools)
                 AgentTerminalToolCatalog.appendTo(tools)

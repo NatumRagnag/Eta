@@ -15,6 +15,8 @@ import fuck.andes.agent.skill.PublicGitHubSkillSource
 import fuck.andes.agent.tool.AgentLocalTools
 import fuck.andes.agent.tool.PendingSkillConflictCapabilityParser
 import fuck.andes.agent.tool.ToolExecutionDecision
+import fuck.andes.agent.xiaomi.XiaomiToolsBridgeProtocol
+import fuck.andes.agent.xiaomi.XiaomiToolsBridgeRemoteExecutor
 import fuck.andes.core.AndroidAgentLogger
 import fuck.andes.core.safeLogType
 import fuck.andes.data.repository.AgentMemoryRepository
@@ -36,6 +38,9 @@ internal class AgentRuntimeRunExecutor(
         AgentRuntimeWire.RunResult,
         List<AgentEvent>,
     ) -> Unit,
+    private val xiaomiToolsBridgeInvoker: ((
+        XiaomiToolsBridgeProtocol.CallRequest,
+    ) -> XiaomiToolsBridgeProtocol.CallResult)? = null,
 ) {
     data class Outcome(
         val result: AgentRuntimeWire.RunResult,
@@ -91,6 +96,35 @@ internal class AgentRuntimeRunExecutor(
                 AgentMemoryContext.DISABLED
             }
             val pendingSkillConflict = PendingSkillConflictCapabilityParser.parse(request.history)
+            val xiaomiToolsBridgeCatalog = if (xiaomiToolsBridgeInvoker == null) {
+                XiaomiToolsBridgeProtocol.Catalog.EMPTY
+            } else {
+                XiaomiToolsBridgeProtocol.catalogFromJson(
+                    request.xiaomiToolsBridgeCatalogJson,
+                )
+            }
+            val xiaomiToolsBridgeExecutor = xiaomiToolsBridgeInvoker
+                ?.takeUnless { xiaomiToolsBridgeCatalog.definitions.isEmpty() }
+                ?.let { invokeRemote ->
+                    XiaomiToolsBridgeRemoteExecutor(
+                        catalog = xiaomiToolsBridgeCatalog,
+                        sessionId = request.runId,
+                        riskEnabled = { risk ->
+                            val permissions = currentPermissions()
+                            when (risk) {
+                                XiaomiToolsBridgeProtocol.Risk.DIRECT ->
+                                    request.config.deviceDirectTools && permissions.deviceDirectTools
+                                XiaomiToolsBridgeProtocol.Risk.SENSITIVE_READ ->
+                                    request.config.deviceSensitiveReadTools &&
+                                        permissions.deviceSensitiveReadTools
+                                XiaomiToolsBridgeProtocol.Risk.SENSITIVE_ACTION ->
+                                    request.config.deviceSensitiveActionTools &&
+                                        permissions.deviceSensitiveActionTools
+                            }
+                        },
+                        invokeRemote = invokeRemote,
+                    )
+                }
             val executor = AgentLocalTools(
                 context = appContext,
                 logger = AndroidAgentLogger,
@@ -154,6 +188,7 @@ internal class AgentRuntimeRunExecutor(
                 skillPackageInstaller = skillPackageInstaller,
                 runAvailableSkillIds = skillContext.installedSkills.mapTo(mutableSetOf()) { it.id },
                 pendingSkillConflict = pendingSkillConflict,
+                xiaomiToolsBridgeExecutor = xiaomiToolsBridgeExecutor,
             )
             toolExecutor = executor
             toolsBinding = runController.register(executor::close)
@@ -167,6 +202,7 @@ internal class AgentRuntimeRunExecutor(
                 runController = runController,
                 skillContext = skillContext,
                 memoryContext = memoryContext,
+                xiaomiToolsBridgeCatalog = xiaomiToolsBridgeCatalog,
             ) { event ->
                 timing.accept(event)
                 acceptEvent(session, event, archivedEvents, entrySurfaceGuard)

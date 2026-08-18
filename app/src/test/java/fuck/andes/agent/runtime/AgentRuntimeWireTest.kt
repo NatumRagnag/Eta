@@ -256,6 +256,8 @@ class AgentRuntimeWireTest {
                 source = "overlay",
                 payload = """{"package":"com.tencent.mm"}""",
             ),
+            xiaomiToolsBridgeCatalogJson =
+                """{"version":1,"tools":[]}""",
         )
 
         val bundle = AgentRuntimeWire.toLegacyBundle(request)

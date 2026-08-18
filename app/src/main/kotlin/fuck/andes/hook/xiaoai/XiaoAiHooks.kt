@@ -84,6 +84,7 @@ internal object XiaoAiHooks {
         module: XposedModule,
         rootLogger: ModuleLogger,
         classLoader: ClassLoader,
+        enableToolsBridge: Boolean = true,
     ): HookInstallation {
         val hooks = HookRegistrar(module, rootLogger, "XiaoAi")
         return hooks.install {
@@ -92,6 +93,7 @@ internal object XiaoAiHooks {
                 module = module,
                 rootLogger = rootLogger,
                 classLoader = classLoader,
+                enableToolsBridge = enableToolsBridge,
             )
         }
     }
@@ -101,6 +103,7 @@ internal object XiaoAiHooks {
         module: XposedModule,
         rootLogger: ModuleLogger,
         classLoader: ClassLoader,
+        enableToolsBridge: Boolean,
     ) {
         val applicationClass = HookSupport.findClassOrNull(classLoader, APPLICATION_CLASS)
         val onCreate = applicationClass?.let { HookSupport.findMethod(it, "onCreate") }
@@ -130,7 +133,15 @@ internal object XiaoAiHooks {
                     "超级小爱版本不在静态适配范围，保持原生行为: versionCode=$versionCode"
                 }
             }
-            chain.proceed()
+            val result = chain.proceed()
+            if (enableToolsBridge && context != null) {
+                XiaoAiToolsBridgeHost.prepare(
+                    context = context,
+                    classLoader = classLoader,
+                    logger = rootLogger.scoped("XiaoAi/ToolsBridge"),
+                )
+            }
+            result
         }
     }
 
@@ -550,7 +561,12 @@ internal object XiaoAiHooks {
         run: ActiveRun,
     ) {
         if (!run.awaitActivation() || activeRun.get() !== run) return
-        val client = AgentRuntimeClient(context, logger)
+        val toolsBridgeCatalog = XiaoAiToolsBridgeHost.catalog()
+        val client = AgentRuntimeClient(
+            context = context,
+            logger = logger,
+            xiaomiToolsBridgeEndpoint = XiaoAiToolsBridgeHost,
+        )
         run.client.set(client)
         var resultRunId: String? = null
         try {
@@ -561,6 +577,10 @@ internal object XiaoAiHooks {
                     config = AgentModelClient.loadConfig(),
                     images = listOfNotNull(run.image),
                     handoff = run.toHandoff(),
+                    xiaomiToolsBridgeCatalogJson = toolsBridgeCatalog
+                        .takeUnless { it.definitions.isEmpty() }
+                        ?.toJson()
+                        .orEmpty(),
                 ),
                 onEvent = { event ->
                     if (activeRun.get() === run && !run.cancelled.get()) {
