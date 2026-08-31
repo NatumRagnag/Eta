@@ -23,16 +23,17 @@ java {
 }
 
 android {
-    namespace = "fuck.andes"
+    namespace = "io.github.mangi.eta"
     compileSdk = 37
     buildToolsVersion = "36.1.0"
 
     defaultConfig {
-        applicationId = "fuck.andes"
+        applicationId = "io.github.mangi.eta"
         minSdk = 34
         targetSdk = 36
-        versionCode = 261
-        versionName = "2.6.1"
+        // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
+        versionCode = 2026083101
+        versionName = "3.0.0"
     }
 
     signingConfigs {
@@ -104,15 +105,19 @@ dependencies {
     implementation(libs.libxposed.service)
     implementation(libs.miuix.ui)
     implementation(libs.miuix.blur)
+    implementation(libs.miuix.icons)
+    implementation(libs.miuix.nav)
     implementation(libs.miuix.preference)
-    implementation(libs.miuix.navigation3.ui)
     implementation(libs.lucide.icons)
-    implementation(libs.androidx.navigation3.runtime)
+    implementation(libs.androidx.navigationevent)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.activity.compose)
     implementation(libs.markdown.renderer)
     implementation(libs.markdown.renderer.m3)
     // markdown-renderer-m3 将 material3 作为 compileOnly，需显式引入以满足运行时依赖
     implementation(libs.material3)
+    implementation(libs.hidden.api.bypass)
 
     // DataStore：Provider / Model 结构化 JSON 与当前选中 ID 等键值
     implementation(libs.datastore.preferences)

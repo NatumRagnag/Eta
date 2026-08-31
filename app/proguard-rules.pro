@@ -21,10 +21,10 @@
 #-renamesourcefileattribute SourceFile
 
 # libxposed 通过 META-INF/xposed/java_init.list 中的类名字符串加载模块入口；
-# 固定入口类名并保留公开无参构造，避免 Release 入口被改到默认包后失去合规性。
+# 固定入口类名并保留公开无参构造；R8 重打包到默认包会让清单失去全限定类名。
 -dontwarn io.github.libxposed.annotation.**
 -adaptresourcefilecontents META-INF/xposed/java_init.list
--keep,allowoptimization class fuck.andes.ModuleMain {
+-keep,allowoptimization public class io.github.mangi.eta.ModuleMain {
     public <init>();
 }
 
@@ -40,17 +40,17 @@
 # ── Release 日志策略 ────────────────────────────────────────────────────────
 # 仅删除 Eta 自有代码中的 Android VERBOSE/DEBUG 调用；INFO/WARN/ERROR 必须保留，
 # 第三方依赖的日志策略由依赖自身决定。
--maximumremovedandroidloglevel 3 class fuck.andes.** { *; }
+-maximumremovedandroidloglevel 3 class io.github.mangi.eta.** { *; }
 
 # XposedModule.log 不是 android.util.Log，R8 无法通过上面的规则识别。
 # debug supplier 是纯观察 API；禁止在 supplier 内执行任何业务副作用。
--assumenosideeffects interface fuck.andes.core.AgentLogger {
+-assumenosideeffects interface io.github.mangi.eta.core.AgentLogger {
     public abstract void debug(kotlin.jvm.functions.Function0);
 }
--assumenosideeffects class fuck.andes.core.AndroidAgentLogger {
+-assumenosideeffects class io.github.mangi.eta.core.AndroidAgentLogger {
     public void debug(kotlin.jvm.functions.Function0);
 }
--assumenosideeffects class fuck.andes.core.ModuleLogger {
+-assumenosideeffects class io.github.mangi.eta.core.ModuleLogger {
     public void debug(kotlin.jvm.functions.Function0);
 }
 
