@@ -129,6 +129,8 @@ BYOK（Bring Your Own Key）意味着 Agent 能力跟随你选择的模型，而
 
 ## 安装
 
+每次推送到 `main` 后，GitHub Actions 都会自动构建并验签 Debug APK，可在对应的 [Eta Build](https://github.com/NatumRagnag/Eta/actions/workflows/android-release.yml) 运行页面下载构建产物；配置完整的 `ETA_RELEASE_*` 仓库 Secrets 后，同一次运行还会产出 Release APK。
+
 <details>
 <summary><b>展开安装步骤</b></summary>
 

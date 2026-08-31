@@ -129,6 +129,8 @@ BYOK—Bring Your Own Key—means the agent follows the capabilities of the mode
 
 ## Installation
 
+Every push to `main` automatically builds and verifies a Debug APK with GitHub Actions. Download it from the corresponding [Eta Build](https://github.com/NatumRagnag/Eta/actions/workflows/android-release.yml) run; when all `ETA_RELEASE_*` repository secrets are configured, the same run also produces a Release APK.
+
 <details>
 <summary><b>Show installation steps</b></summary>
 
