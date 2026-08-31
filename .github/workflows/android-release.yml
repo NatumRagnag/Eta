@@ -1,5 +1,7 @@
 name: Eta Build
 
+# Every main-branch push produces a verified Debug APK artifact. Release builds
+# are added automatically when all four ETA_RELEASE_* secrets are configured.
 on:
   push:
     branches:
