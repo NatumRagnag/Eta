@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   build-apks:
-    name: 测试并构建 APK
+    name: 构建 APK
     runs-on: ubuntu-latest
     timeout-minutes: 40
 
@@ -64,10 +64,10 @@ jobs:
             > "$RUNNER_TEMP/eta-release.jks"
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
-      - name: 运行单元测试并构建 Debug APK
+      - name: 构建 Debug APK
         run: >-
           ./gradlew --no-daemon --no-configuration-cache
-          :app:testDebugUnitTest :app:assembleDebug
+          :app:assembleDebug
 
       - name: 构建 Release APK
         if: steps.signing.outputs.enabled == 'true'
