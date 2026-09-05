@@ -12,6 +12,31 @@ import org.junit.Test
 
 class AgentPromptBuilderTest {
     @Test
+    fun currentModelIdentityFollowsConfigWithCustomOrEmptyProviderPrompt() {
+        for (providerPrompt in listOf("自定义回答风格", "")) {
+            val config = modelConfig(providerPrompt, terminalTools = false, browserTools = false)
+                .copy(model = "provider/model-a", modelDisplayName = "显示名称")
+            for (modelId in listOf(config.model, "provider/model-b")) {
+                val messages = AgentPromptBuilder.buildSystemMessages(
+                    config = config.copy(model = modelId),
+                    skillContext = SkillContext.EMPTY,
+                    memoryContext = AgentMemoryContext.DISABLED,
+                    rootAvailable = false,
+                )
+
+                val identity = messages.systemContents().single { it.contains("当前配置的模型：") }
+                assertTrue(identity.contains("你是 Eta"))
+                assertTrue(identity.contains("当前配置的模型：\"$modelId\""))
+                assertFalse(identity.contains(config.modelDisplayName))
+                if (modelId != config.model) assertFalse(identity.contains(config.model))
+                if (providerPrompt.isNotBlank()) {
+                    assertEquals(providerPrompt, messages.getJSONObject(0).getString("content"))
+                }
+            }
+        }
+    }
+
+    @Test
     fun messagesKeepSystemHistoryAndCurrentImageInputInStableOrder() {
         val image = AgentModelClient.ModelImage(
             reference = "data:image/png;base64,AA==",
@@ -31,6 +56,7 @@ class AgentPromptBuilderTest {
                 AgentModelClient.ConversationMessage(role = "assistant", content = "旧回答"),
             ),
             skillContext = SkillContext.EMPTY,
+            rootAvailable = true,
         )
 
         assertEquals(
@@ -38,7 +64,7 @@ class AgentPromptBuilderTest {
             messages.roles(),
         )
         assertEquals("自定义系统约束", messages.getJSONObject(0).getString("content"))
-        assertTrue(messages.systemContents().any { it.contains("system_server 有限重绑") })
+        assertTrue(messages.systemContents().any { it.contains("只有系统保护后端可用时才会请求有限重绑") })
         assertTrue(messages.systemContents().any { it.contains("不要改用坐标或 Shell 重放") })
         assertTrue(messages.systemContents().any { it.contains("通用 GUI 工具完成输入和点击发送") })
         assertTrue(messages.systemContents().any { it.contains("不追加二次确认") })

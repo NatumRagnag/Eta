@@ -7,6 +7,16 @@ import org.junit.Test
 
 class PowerHooksTest {
     @Test
+    fun `hyperos also routes the upstream short duration power assistant shortcut`() {
+        assertTrue(PowerHooks.shouldInterceptHyperOsVoiceAssistant(
+            "launch_voice_assistant", "imperceptible_press_power_key", PowerAssistantTarget.ETA,
+        ))
+        assertFalse(PowerHooks.shouldInterceptHyperOsVoiceAssistant(
+            "launch_voice_assistant", "imperceptible_press_power_key", PowerAssistantTarget.OEM,
+        ))
+    }
+
+    @Test
     fun `hyperos intercepts only long press power voice assistant for managed targets`() {
         assertTrue(
             PowerHooks.shouldInterceptHyperOsVoiceAssistant(

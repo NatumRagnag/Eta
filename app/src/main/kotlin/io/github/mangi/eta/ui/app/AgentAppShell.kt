@@ -9,6 +9,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AddComment
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,7 +26,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.composables.icons.lucide.R as LucideR
 import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.components.AdaptiveTopAppBar
 import io.github.mangi.eta.ui.components.ConversationSidePaneScaffold
@@ -29,9 +34,9 @@ import io.github.mangi.eta.ui.components.TopBarBackdrop
 import io.github.mangi.eta.ui.components.captureForTopBar
 import io.github.mangi.eta.ui.components.rememberTopBarBackdrop
 import io.github.mangi.eta.ui.components.topBarContainerColor
-import io.github.mangi.eta.ui.navigation.AppRoute
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
+import io.github.mangi.eta.ui.navigation.AppRoute
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
@@ -65,6 +70,10 @@ fun AgentAppShell(
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onLaunchKimiWeb: () -> Unit,
+    kimiWebLabel: String,
+    canStopKimiWeb: Boolean,
+    onStopKimiWeb: () -> Unit,
+    onRefreshKimiWeb: () -> Unit,
     onOpenBrowser: () -> Unit,
     onSelectConversation: (String) -> Unit,
     onConversationRename: (ConversationSummaryUi) -> Unit,
@@ -98,6 +107,10 @@ fun AgentAppShell(
                             onNewConversation = onNewConversation,
                             onOpenTerminal = onOpenTerminal,
                             onLaunchKimiWeb = onLaunchKimiWeb,
+                            kimiWebLabel = kimiWebLabel,
+                            canStopKimiWeb = canStopKimiWeb,
+                            onStopKimiWeb = onStopKimiWeb,
+                            onRefreshKimiWeb = onRefreshKimiWeb,
                             onOpenBrowser = onOpenBrowser,
                         )
                     }
@@ -151,6 +164,10 @@ private fun AgentTopBar(
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onLaunchKimiWeb: () -> Unit,
+    kimiWebLabel: String,
+    canStopKimiWeb: Boolean,
+    onStopKimiWeb: () -> Unit,
+    onRefreshKimiWeb: () -> Unit,
     onOpenBrowser: () -> Unit,
 ) {
     val isHome = route is AppRoute.Home
@@ -158,7 +175,7 @@ private fun AgentTopBar(
         if (isHome) {
             IconButton(onClick = onOpenConversationPane) {
                 Icon(
-                    painter = painterResource(LucideR.drawable.lucide_ic_menu),
+                    imageVector = Icons.Rounded.Menu,
                     contentDescription = stringResource(R.string.action_conversation_history),
                 )
             }
@@ -172,6 +189,10 @@ private fun AgentTopBar(
                 onNewConversation = onNewConversation,
                 onOpenTerminal = onOpenTerminal,
                 onLaunchKimiWeb = onLaunchKimiWeb,
+                kimiWebLabel = kimiWebLabel,
+                canStopKimiWeb = canStopKimiWeb,
+                onStopKimiWeb = onStopKimiWeb,
+                onRefreshKimiWeb = onRefreshKimiWeb,
                 onOpenBrowser = onOpenBrowser,
             )
         }
@@ -208,38 +229,44 @@ private fun TopBarOverflowMenu(
     onNewConversation: () -> Unit,
     onOpenTerminal: () -> Unit,
     onLaunchKimiWeb: () -> Unit,
+    kimiWebLabel: String,
+    canStopKimiWeb: Boolean,
+    onStopKimiWeb: () -> Unit,
+    onRefreshKimiWeb: () -> Unit,
     onOpenBrowser: () -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { showMenu = true }) {
+        IconButton(onClick = { onRefreshKimiWeb(); showMenu = true }) {
             Icon(
-                painter = painterResource(LucideR.drawable.lucide_ic_ellipsis_vertical),
+                imageVector = Icons.Rounded.MoreVert,
                 contentDescription = stringResource(R.string.action_more),
             )
         }
         WindowListPopup(
             show = showMenu,
             alignment = PopupPositionProvider.Align.End,
-            enableWindowDim = false,
             onDismissRequest = { showMenu = false },
         ) {
             val newConversationText = stringResource(R.string.action_new_conversation)
             val openTerminalText = stringResource(R.string.action_open_terminal)
-            val launchKimiWebText = stringResource(R.string.action_launch_kimi_web)
+            val launchKimiWebText = kimiWebLabel
+            val stopKimiWebText = stringResource(R.string.capability_kimi_stop)
             val openBrowserText = stringResource(R.string.action_open_browser)
             val menuItems = remember(
                 newConversationText,
                 openTerminalText,
                 launchKimiWebText,
                 openBrowserText,
+                stopKimiWebText,
+                canStopKimiWeb,
             ) {
                 listOf(
                     DropdownItem(
                         text = newConversationText,
                         icon = { modifier ->
                             Icon(
-                                painter = painterResource(LucideR.drawable.lucide_ic_message_circle_plus),
+                                imageVector = Icons.Rounded.AddComment,
                                 contentDescription = null,
                                 modifier = modifier.size(TopBarMenuIconSize),
                             )
@@ -249,7 +276,7 @@ private fun TopBarOverflowMenu(
                         text = openTerminalText,
                         icon = { modifier ->
                             Icon(
-                                painter = painterResource(LucideR.drawable.lucide_ic_square_terminal),
+                                imageVector = Icons.Rounded.Terminal,
                                 contentDescription = null,
                                 modifier = modifier.size(TopBarMenuIconSize),
                             )
@@ -269,13 +296,13 @@ private fun TopBarOverflowMenu(
                         text = openBrowserText,
                         icon = { modifier ->
                             Icon(
-                                painter = painterResource(LucideR.drawable.lucide_ic_globe),
+                                imageVector = Icons.Rounded.Language,
                                 contentDescription = null,
                                 modifier = modifier.size(TopBarMenuIconSize),
                             )
                         },
                     ),
-                )
+                ) + if (canStopKimiWeb) listOf(DropdownItem(text = stopKimiWebText)) else emptyList()
             }
             ListPopupColumn {
                 menuItems.forEachIndexed { index, item ->
@@ -291,6 +318,7 @@ private fun TopBarOverflowMenu(
                                 1 -> onOpenTerminal()
                                 2 -> onLaunchKimiWeb()
                                 3 -> onOpenBrowser()
+                                4 -> onStopKimiWeb()
                             }
                         },
                     )
@@ -315,6 +343,7 @@ private fun titleForRoute(route: AppRoute?): String = when (route) {
     is AppRoute.DataBackup -> stringResource(R.string.data_backup_title)
     is AppRoute.Memory -> stringResource(R.string.route_memory)
     is AppRoute.LinuxEnvironment -> stringResource(R.string.route_linux_environment)
+    is AppRoute.Workspace -> stringResource(R.string.capability_workspace)
     is AppRoute.SharedFolders -> stringResource(R.string.route_shared_folders)
     is AppRoute.LinuxFiles -> stringResource(R.string.route_linux_files)
     is AppRoute.ModelProviders -> stringResource(R.string.route_model_providers)

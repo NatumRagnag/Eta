@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="execution_channel">任務運行</string>
+    <string name="execution_title">Eta 正在運行</string>
+    <string name="execution_summary">%1$d 項任務正在運行，可返回 Eta 查看進度</string>
+    <string name="execution_stop">停止運行任務</string>
+</resources>

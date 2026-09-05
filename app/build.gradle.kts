@@ -26,14 +26,17 @@ android {
     namespace = "io.github.mangi.eta"
     compileSdk = 37
     buildToolsVersion = "36.1.0"
+    ndkVersion = libs.versions.ndk.get()
 
     defaultConfig {
         applicationId = "io.github.mangi.eta"
         minSdk = 34
         targetSdk = 36
         // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
-        versionCode = 2026083101
-        versionName = "3.0.0"
+        // 日期编号有意高于 Lint 的预警阈值，仍在 Android versionCode 整数范围内。
+        //noinspection HighAppVersionCode
+        versionCode = 2026090501
+        versionName = "3.0.1"
     }
 
     signingConfigs {
@@ -78,6 +81,10 @@ android {
     }
 
     packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            keepDebugSymbols += setOf("**/libproot_exec.so", "**/libproot_loader.so", "**/libeta_pty.so")
+        }
         resources {
             // 合并 Xposed 模块声明，避免 release 裁剪后模块入口失效
             merges += "META-INF/xposed/*"
@@ -99,16 +106,17 @@ android {
 }
 
 dependencies {
+    implementation(libs.commons.compress)
+    implementation(libs.xz)
     compileOnly(libs.libxposed.api)
     // UI 侧 RemotePreferences 写入桥：通过 XposedService 将配置提交到 LSPosed 数据库；
     // Hook 侧用 XposedInterface.getRemotePreferences 读取当前进程持有的配置缓存。
     implementation(libs.libxposed.service)
     implementation(libs.miuix.ui)
     implementation(libs.miuix.blur)
-    implementation(libs.miuix.icons)
     implementation(libs.miuix.nav)
     implementation(libs.miuix.preference)
-    implementation(libs.lucide.icons)
+    implementation(libs.material.icons.extended)
     implementation(libs.androidx.navigationevent)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

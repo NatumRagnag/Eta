@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="execution_channel">Running tasks</string>
+    <string name="execution_title">Eta is running</string>
+    <string name="execution_summary">%1$d tasks are running. Return to Eta to see progress</string>
+    <string name="execution_stop">Stop running tasks</string>
+</resources>

@@ -48,6 +48,9 @@ sealed interface AppRoute : NavKey {
     data object SharedFolders : AppRoute
 
     @Serializable
+    data object Workspace : AppRoute
+
+    @Serializable
     data class LinuxFiles(val distribution: String) : AppRoute
 
     @Serializable
@@ -63,7 +66,7 @@ sealed interface AppRoute : NavKey {
     data class ModelProviderDetail(val providerId: String) : AppRoute
 
     @Serializable
-    data class ModelProviderNew(val type: NewProviderType) : AppRoute
+    data class ModelProviderNew(val providerType: NewProviderType) : AppRoute
 }
 
 @Serializable

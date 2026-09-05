@@ -1,10 +1,7 @@
 @file:android.annotation.SuppressLint("LocalContextGetResourceValueCall")
 
 package io.github.mangi.eta.ui.pages.providers
-import io.github.mangi.eta.R
-import androidx.compose.ui.res.stringResource
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -24,22 +24,22 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.mapSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.composables.icons.lucide.R as LucideR
 import io.github.mangi.eta.EtaApp
+import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.AnthropicProviderSetting
 import io.github.mangi.eta.data.model.CustomProviderSetting
 import io.github.mangi.eta.data.model.OpenAiCompatibleProviderSetting
@@ -67,19 +67,19 @@ import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.preference.WindowSpinnerPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
-private data class ProviderConfigDraft(
+internal data class ProviderConfigDraft(
     val name: String,
     val baseUrl: String,
     val apiKey: String,
@@ -107,6 +107,33 @@ private data class ProviderConfigDraft(
         )
     }
 }
+
+internal val ProviderConfigDraftSaver = mapSaver(
+    save = { draft ->
+        mapOf(
+            "name" to draft.name,
+            "baseUrl" to draft.baseUrl,
+            "apiKey" to draft.apiKey,
+            "systemPrompt" to draft.systemPrompt,
+            "isEnabled" to draft.isEnabled,
+            "endpointMode" to draft.endpointMode,
+            "hostedWebSearchEnabled" to draft.hostedWebSearchEnabled,
+            "anthropicVersion" to draft.anthropicVersion,
+        )
+    },
+    restore = { state ->
+        ProviderConfigDraft(
+            name = state.getValue("name") as String,
+            baseUrl = state.getValue("baseUrl") as String,
+            apiKey = state.getValue("apiKey") as String,
+            systemPrompt = state.getValue("systemPrompt") as String,
+            isEnabled = state.getValue("isEnabled") as Boolean,
+            endpointMode = state.getValue("endpointMode") as String,
+            hostedWebSearchEnabled = state.getValue("hostedWebSearchEnabled") as Boolean,
+            anthropicVersion = state.getValue("anthropicVersion") as String,
+        )
+    },
+)
 
 @Composable
 internal fun ModelProviderDetailScreen(
@@ -166,7 +193,12 @@ internal fun ModelProviderDetailScreen(
     val initial = provider ?: draft!!
     val isNew = provider == null
     var currentTab by remember { mutableIntStateOf(0) }
-    var configDraft by remember(initial.id) { mutableStateOf(ProviderConfigDraft.from(initial)) }
+    var configDraft by rememberSaveable(
+        initial.id,
+        stateSaver = ProviderConfigDraftSaver,
+    ) {
+        mutableStateOf(ProviderConfigDraft.from(initial))
+    }
     val title = if (isNew) context.getString(R.string.page_create_new_provider_36cab9) else initial.name
 
     MiuixScaffold(title = title, onBack = onBack) { paddingValues, scrollBehavior, sidePadding ->
@@ -277,9 +309,7 @@ private fun ProviderConfigTab(
                         trailingIcon = {
                             IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
                                 Icon(
-                                    painter = painterResource(
-                                        if (apiKeyVisible) LucideR.drawable.lucide_ic_eye else LucideR.drawable.lucide_ic_eye_off,
-                                    ),
+                                    imageVector = if (apiKeyVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
                                     contentDescription = if (apiKeyVisible) context.getString(R.string.page_hide_bb0e7e) else context.getString(R.string.page_show_71b677),
                                 )
                             }
@@ -447,11 +477,10 @@ private fun ProviderConfigTab(
                                     if (added.isEnabled) {
                                         RuntimeConfigRepository.setSelectedProviderId(added.id)
                                     }
-                                    val ok = RuntimeConfigRepository.syncToRemotePreferences(
+                                    RuntimeConfigRepository.syncToRemotePreferences(
                                         EtaApp.serviceInstance
                                     )
-                                    status = if (ok) context.getString(R.string.page_created_set_current_and_synced_a99010)
-                                    else context.getString(R.string.page_created_and_set_as_current_lsposed_service_is_not_co_baa03d)
+                                    status = context.getString(R.string.capability_provider_created)
                                     creationCommitted = true
                                     onCreated(added.id)
                                 } else {
@@ -459,13 +488,12 @@ private fun ProviderConfigTab(
                                     if (built.isEnabled) {
                                         RuntimeConfigRepository.setSelectedProviderId(built.id)
                                     }
-                                    val ok = RuntimeConfigRepository.syncToRemotePreferences(
+                                    RuntimeConfigRepository.syncToRemotePreferences(
                                         EtaApp.serviceInstance
                                     )
                                     status = when {
                                         !built.isEnabled -> context.getString(R.string.page_saved_provider_not_enabled_7afa54)
-                                        ok -> context.getString(R.string.page_saved_current_and_synced_95dac1)
-                                        else -> context.getString(R.string.page_saved_and_set_as_current_lsposed_service_not_connect_08da2c)
+                                        else -> context.getString(R.string.capability_provider_saved)
                                     }
                                 }
                             } catch (cancelled: CancellationException) {

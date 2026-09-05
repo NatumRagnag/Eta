@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <resources>
   <string name="app_name">Eta</string>
-  <string name="xposed_description">Eta 系统级 AI Agent：接管小布与超级小爱助手入口，解锁 Gemini 与一圈即搜，并提供内置浏览器、终端和设备工具。</string>
-  <string name="agent_accessibility_label">Eta 设备控制</string>
-  <string name="agent_accessibility_description">允许 Eta 读取当前界面并执行点击、滑动、文字输入和系统操作。</string>
+  <string name="xposed_description">系统级 AI Agent，接管小布与小爱，解锁 Gemini 与一圈即搜，集成浏览器、终端与设备工具</string>
+  <string name="agent_accessibility_label">Eta Agent</string>
+  <string name="agent_accessibility_description">读取屏幕内容并执行点击、滑动、文字输入等操作，协助 Agent 完成任务。</string>
   <string name="notification_history_service_label">Eta 通知历史</string>
   <string name="voice_interaction_service_label">Eta 系统助手</string>
   <string name="recognition_service_label">Eta 语音识别</string>
@@ -1047,7 +1047,6 @@
   <string name="skills_replace">替换</string>
   <string name="skills_delete_summary">删除“%1$s”后需要重新安装才能恢复。</string>
   <string name="skills_no_description">无描述</string>
-  <string name="skills_delete_named">删除 %1$s</string>
   <string name="browser_no_external_app">没有应用可以打开当前网页</string>
   <string name="browser_reset">重置</string>
   <string name="browser_back">后退</string>
