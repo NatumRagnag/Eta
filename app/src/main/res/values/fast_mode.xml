@@ -1,0 +1,7 @@
+<resources>
+    <string name="chat_fast_mode">Fast</string>
+    <string name="chat_fast_mode_summary">Try faster processing for all models. Falls back when unsupported; extra charges may apply.</string>
+    <string name="chat_fast_on">Fast on</string>
+    <string name="chat_fast_off">Fast off</string>
+    <string name="chat_reasoning_and_fast">Reasoning: %1$s, %2$s</string>
+</resources>

@@ -18,6 +18,7 @@ internal object AgentRuntimePolicy {
         val deviceSensitiveReadTools: Boolean = false,
         val deviceSensitiveActionTools: Boolean = false,
         val thinking: Boolean,
+        val fastMode: Boolean = false,
     )
 
     fun permissions(preferences: SharedPreferences?): Permissions =
@@ -30,6 +31,7 @@ internal object AgentRuntimePolicy {
             deviceSensitiveActionTools =
                 preferences.allowed(Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS),
             thinking = preferences.allowed(Prefs.Keys.AGENT_THINKING_ENABLED),
+            fastMode = preferences.allowed(Prefs.Keys.AGENT_FAST_MODE_ENABLED),
         )
 
     fun constrain(
@@ -49,6 +51,7 @@ internal object AgentRuntimePolicy {
                 config.deviceSensitiveActionTools && permissions.deviceSensitiveActionTools,
             thinkingEnabled = thinkingEnabled,
             reasoningEffort = effectiveEffort,
+            fastModeEnabled = permissions.fastMode,
         )
         if (thinkingEnabled) return constrained
         return constrained.copy(

@@ -17,6 +17,7 @@ internal object AgentHttpClient {
 
     val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
+            .addInterceptor(ProviderFastMode.fallbackInterceptor)
             .connectTimeout(CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .readTimeout(READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .writeTimeout(WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS)

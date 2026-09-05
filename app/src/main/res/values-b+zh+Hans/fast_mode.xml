@@ -1,0 +1,7 @@
+<resources>
+    <string name="chat_fast_mode">Fast</string>
+    <string name="chat_fast_mode_summary">为所有模型尝试加速，不支持时回退；可能额外计费。</string>
+    <string name="chat_fast_on">Fast 已开启</string>
+    <string name="chat_fast_off">Fast 已关闭</string>
+    <string name="chat_reasoning_and_fast">推理：%1$s，%2$s</string>
+</resources>

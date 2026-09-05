@@ -105,7 +105,7 @@ Under **System assistant takeover** in Eta's Settings, the ColorOS long-press ta
 
 New installations default to Breeno; users who had enabled the former **Launch Gemini with the power button** option remain on Gemini. Automatic default-assistant configuration is a separate option and applies only to Gemini and Eta. If the selected target cannot start, that long press immediately falls back to Breeno.
 
-HyperOS 电源键与横条长按已接入源码适配，尚未经过真机验证；桌面作用域、服务依赖与触发条件见 [HyperOS 系统入口适配](docs/HYPEROS_SYSTEM_ENTRY.md)。
+HyperOS power-button and navigation-handle integration includes the upstream shortcut signatures and the existing Xiaomi routing fallbacks. These merged changes have not received new physical-device testing. See [HyperOS system entry integration](docs/HYPEROS_SYSTEM_ENTRY.md) for launcher scopes, service dependencies, and trigger conditions.
 
 ### Breeno and Super XiaoAI
 
@@ -130,6 +130,8 @@ Gemini unlock and Circle to Search were Eta's original Google enablement feature
 - **Data backup:** Settings can export or import conversations, model provider configuration, and `MEMORY.md` for package-name changes or device migration; backup files contain provider API keys and should be stored securely
 
 BYOK—Bring Your Own Key—means the agent follows the capabilities of the model and provider you choose instead of being locked to one bundled service.
+
+The reasoning menu in the chat input also includes an independent **Fast** toggle (off by default). It works with any reasoning level and can be tried with every model, including models without reasoning controls. The toggle persists across model changes. Requests fall back once to normal processing when the server explicitly rejects the acceleration option; actual acceleration depends on the provider and account, and may cost extra.
 
 ## Installation
 

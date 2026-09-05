@@ -15,6 +15,20 @@ import org.junit.Test
 
 class AgentRuntimePolicyTest {
     @Test
+    fun fastModeUsesTheLocalToggleIndependentlyOfReasoningAndCallerConfig() {
+        val config = modelConfig(terminalTools = false, browserTools = false, thinking = true)
+            .copy(reasoningEffort = ReasoningEffort.HIGH)
+        for (enabled in listOf(false, true)) {
+            val permissions = AgentRuntimePolicy.permissions(booleanPreferences { key, default ->
+                if (key == io.github.mangi.eta.config.Prefs.Keys.AGENT_FAST_MODE_ENABLED) enabled else default
+            })
+            val constrained = AgentRuntimePolicy.constrain(config.copy(fastModeEnabled = !enabled), permissions)
+            assertEquals(enabled, constrained.fastModeEnabled)
+            assertEquals(ReasoningEffort.HIGH, constrained.effectiveReasoningEffort)
+        }
+    }
+
+    @Test
     fun unavailablePreferencesFailClosed() {
         assertEquals(
             AgentRuntimePolicy.Permissions(

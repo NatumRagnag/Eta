@@ -52,7 +52,9 @@ internal object OpenAiResponsesProvider : AgentProviderClient {
             .headers(headers)
             .post(body)
             .build()
-        val call = AgentHttpClient.client.newCall(httpRequest)
+        val call = AgentHttpClient.client.newCall(
+            ProviderFastMode.prepare(httpRequest, config.fastModeEnabled, capabilities.endpoint)
+        )
         val binding = runController.register(call::cancel)
 
         try {

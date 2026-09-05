@@ -51,6 +51,7 @@ internal object AgentModelClient {
                         Prefs.isEnabled(Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS),
                     thinkingEnabled = effort.enablesReasoning,
                     reasoningEffort = effort,
+                    fastModeEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_FAST_MODE_ENABLED),
                 )
             }
         }
@@ -76,6 +77,7 @@ internal object AgentModelClient {
             deviceSensitiveActionTools =
                 Prefs.isEnabled(Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS),
             thinkingEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_THINKING_ENABLED),
+            fastModeEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_FAST_MODE_ENABLED),
             reasoningEffort = ReasoningEffort.fromLegacy(
                 Prefs.isEnabled(Prefs.Keys.AGENT_THINKING_ENABLED)
             ),
@@ -243,6 +245,7 @@ internal object AgentModelClient {
         val deviceSensitiveReadTools: Boolean = false,
         val deviceSensitiveActionTools: Boolean = false,
         val thinkingEnabled: Boolean = false,
+        val fastModeEnabled: Boolean = false,
         val reasoningEffort: ReasoningEffort? = null,
         val reasoningCapabilities: ModelReasoningCapabilities? = null,
         val extraBodyJson: String = "",

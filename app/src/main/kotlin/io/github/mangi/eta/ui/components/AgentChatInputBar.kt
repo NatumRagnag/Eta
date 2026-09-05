@@ -1,5 +1,7 @@
 package io.github.mangi.eta.ui.components
 
+import android.content.SharedPreferences
+import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -38,10 +40,12 @@ import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Flare
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -61,6 +65,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -69,6 +74,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.EtaApp
+import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.ui.model.AgentContextUsageUi
 import io.github.mangi.eta.ui.model.AgentModelPickerUiState
@@ -78,6 +85,7 @@ import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.ListPopupDefaults
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
@@ -294,16 +302,14 @@ internal fun AgentChatInputBar(
 
                             Spacer(modifier = Modifier.width(2.dp))
 
-                            if (availableReasoningEfforts.isNotEmpty()) {
-                                ThinkingEffortChip(
-                                    effort = reasoningEffort,
-                                    options = availableReasoningEfforts,
-                                    enabled = !isStreaming,
-                                    popupAnchorTopPx = inputContainerTopPx,
-                                    popupMaxHeight = thinkingPopupMaxHeight,
-                                    onEffortChange = onReasoningEffortChange,
-                                )
-                            }
+                            ThinkingEffortChip(
+                                effort = reasoningEffort,
+                                options = availableReasoningEfforts,
+                                enabled = !isStreaming,
+                                popupAnchorTopPx = inputContainerTopPx,
+                                popupMaxHeight = thinkingPopupMaxHeight,
+                                onEffortChange = onReasoningEffortChange,
+                            )
                         }
 
                         Spacer(modifier = Modifier.weight(1f))
@@ -392,7 +398,7 @@ internal fun AgentChatInputBar(
 
 }
 
-/** 思考强度选择保持为单一图标，当前状态仅通过图标颜色表达。 */
+/** 推理等级与独立的 Fast 开关共用菜单；无推理档位的模型也可尝试 Fast。 */
 @Composable
 private fun ThinkingEffortChip(
     effort: ReasoningEffort,
@@ -404,8 +410,22 @@ private fun ThinkingEffortChip(
     modifier: Modifier = Modifier,
 ) {
     var showPopup by remember { mutableStateOf(false) }
-    val active = effort != ReasoningEffort.OFF
-    val menuEnabled = enabled && options.size > 1
+    val context = LocalContext.current
+    val fastModePrefs = remember { Prefs.localAgentPreferences() }
+    var fastModeEnabled by remember(fastModePrefs) {
+        mutableStateOf(fastModePrefs?.getBoolean(Prefs.Keys.AGENT_FAST_MODE_ENABLED, false) ?: false)
+    }
+    DisposableEffect(fastModePrefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { preferences, key ->
+            if (key == Prefs.Keys.AGENT_FAST_MODE_ENABLED) {
+                fastModeEnabled = preferences.getBoolean(key, false)
+            }
+        }
+        fastModePrefs?.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { fastModePrefs?.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    val active = (options.isNotEmpty() && effort != ReasoningEffort.OFF) || fastModeEnabled
+    val menuEnabled = enabled
     LaunchedEffect(menuEnabled) {
         if (!menuEnabled) showPopup = false
     }
@@ -429,8 +449,12 @@ private fun ThinkingEffortChip(
             minHeight = ChatInputActionSize,
         ) {
             Icon(
-                imageVector = Icons.Rounded.Flare,
-                contentDescription = stringResource(R.string.chat_reasoning_effort, effort.displayName),
+                imageVector = if (fastModeEnabled) Icons.Rounded.Bolt else Icons.Rounded.Flare,
+                contentDescription = stringResource(
+                    R.string.chat_reasoning_and_fast,
+                    effort.displayName,
+                    stringResource(if (fastModeEnabled) R.string.chat_fast_on else R.string.chat_fast_off),
+                ),
                 modifier = Modifier.size(ThinkingIconSize),
                 tint = contentColor,
             )
@@ -441,6 +465,7 @@ private fun ThinkingEffortChip(
             alignment = PopupPositionProvider.Align.TopStart,
             onDismissRequest = { showPopup = false },
             maxHeight = popupMaxHeight,
+            minWidth = 260.dp,
         ) {
             val dismiss = LocalDismissState.current
             ListPopupColumn {
@@ -456,6 +481,36 @@ private fun ThinkingEffortChip(
                         },
                     )
                 }
+                if (options.isNotEmpty()) {
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp))
+                }
+                DropdownImpl(
+                    text = stringResource(R.string.chat_fast_mode),
+                    optionSize = 1,
+                    isSelected = fastModeEnabled,
+                    index = 0,
+                    onSelectedIndexChange = {
+                        val next = !fastModeEnabled
+                        val saved = runCatching {
+                            fastModePrefs?.edit()
+                                ?.putBoolean(Prefs.Keys.AGENT_FAST_MODE_ENABLED, next)
+                                ?.commit() == true
+                        }.getOrDefault(false)
+                        if (saved) {
+                            fastModeEnabled = next
+                            Prefs.reconcileAgentPreferences(EtaApp.serviceInstance)
+                        } else {
+                            Toast.makeText(context, R.string.settings_write_failed, Toast.LENGTH_SHORT).show()
+                        }
+                        dismiss?.invoke()
+                    },
+                )
+                Text(
+                    text = stringResource(R.string.chat_fast_mode_summary),
+                    fontSize = 12.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.width(260.dp).padding(horizontal = 16.dp, vertical = 8.dp),
+                )
             }
         }
     }

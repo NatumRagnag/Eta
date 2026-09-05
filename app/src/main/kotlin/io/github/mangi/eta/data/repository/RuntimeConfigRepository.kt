@@ -70,7 +70,9 @@ internal object RuntimeConfigRepository {
         val settings = ProviderRepository.repairSelection()
         val provider = settings.selectedProviderId?.let { ProviderRepository.providerById(it) } ?: return null
         val model = provider.selectedOrFirstModel(settings.selectedModelId) ?: return null
-        return buildRuntimeConfig(provider, model)
+        return buildRuntimeConfig(provider, model).copy(
+            fastModeEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_FAST_MODE_ENABLED),
+        )
     }
 
     suspend fun syncToRemotePreferences(service: XposedService?): Boolean {
